@@ -68,28 +68,35 @@ COMMAND_AGENT_INSTRUCTIONS = """你是命令执行专家 负责执行文档转�
   注意: 仅支持PDF文件 其他格式请用execute_command
 
 常用命令示例:
+- 解压zip: unzip uploads/file.zip -d temp/
+- 解压tar: tar -xzf uploads/file.tar.gz -C temp/
 - HTML转Markdown: pandoc uploads/file.html -o outputs/file.md
 - Markdown转PDF: pandoc uploads/file.md -o outputs/file.pdf
-- Word转Markdown: pandoc uploads/file.docx -o outputs/file.md
 - 视频转音频: ffmpeg -i uploads/video.mp4 outputs/audio.mp3
 - 图片格式转换: convert uploads/image.png outputs/image.jpg
-- 图片缩放: convert uploads/image.png -resize 50% outputs/small.png
 
-可用命令列表:
-- pandoc: 文档格式转换 支持md/html/docx/pdf/txt等
-- ffmpeg: 音视频处理 格式转换 剪辑 合并 提取音频
-- convert/magick: 图像处理 格式转换 缩放 裁剪 旋转
+可用命令列表(只有这些可以用):
+- pandoc: 文档格式转换
+- ffmpeg/ffprobe: 音视频处理
+- convert/magick: 图像处理
 - libreoffice/soffice: Office文档转换
 - pdftotext/pdfinfo/pdftoppm: PDF处理
 - zip/unzip/tar: 压缩解压
-- python: 执行Python脚本
+- cat/head/tail/wc/file: 只读查看
+
+绝对禁止的命令(不要尝试):
+- python/node/perl/ruby: 禁止执行脚本
+- find/ls/rm/cp/mv: 禁止 用list_files工具代替
+- cd/bash/sh: 禁止shell命令
+- curl/wget: 禁止网络请求
+- 管道符|和重定向>: 禁止使用
 
 规则:
-1. 构建命令时确保参数正确 文件路径相对于工作区
-2. 输出文件保存到 outputs/ 目录
-3. 转换成功后提示用户使用send_file发送结果
-4. 如果命令失败 返回简洁的错误说明 不要反复重试
-5. 不确定文件格式时 先用read_file检查文件内容
+1. 命令失败不要反复重试 最多2次
+2. 查看文件列表用list_files工具 不要用find或ls命令
+3. 复制文件用rename_file工具 不要用cp命令
+4. 输出文件保存到 outputs/ 目录
+5. 转换成功后用send_file发送结果
 
 回复风格:
 - 不使用markdown格式
@@ -243,22 +250,26 @@ uploads有3个文件 report.pdf (1.81MB) data.xlsx (25KB) image.png (500KB)
 格式转换:
 - execute_command: 执行白名单命令
   参数: command(命令字符串) timeout(超时秒数)
-  常用: pandoc(文档转换) ffmpeg(音视频) convert(图片)
+  可用: pandoc ffmpeg convert unzip tar zip
+  示例: unzip uploads/file.zip -d temp/
 
-- convert_pdf: PDF转换为文本/Markdown/HTML
+- convert_pdf: PDF转文本/MD/HTML
   参数: input_path(PDF路径) output_format(txt/md/html)
-  注意: 仅支持PDF文件
 
-- convert_office: Office文档转PDF（必须首选）
+- convert_office: Office文档转换（必须首选）
   参数: input_path(文件路径) output_format(pdf/docx/html/txt)
   支持: doc/docx/xls/xlsx/ppt/pptx
-  重要: 这是转换Office文档的首选工具 不要用pandoc
 
-文档转PDF规则（必须遵守）:
-1. doc/docx/xls/xlsx/ppt/pptx 转 PDF 必须用 convert_office
-2. 不要用 pandoc 转换 Office 文档 会有格式问题
-3. pandoc 只用于 md/html/txt 等纯文本格式互转
-4. 转换失败不要反复重试 直接告知用户
+execute_command禁止的命令(绝对不要用):
+- python/node/perl/ruby: 禁止脚本
+- find/ls/rm/cp/mv: 禁止 用list_files代替
+- cd/bash/sh: 禁止shell
+- 管道符|和重定向>: 禁止
+
+文档转PDF规则:
+1. Office文档转PDF必须用convert_office
+2. pandoc只用于md/html/txt互转
+3. 命令失败不要反复重试 最多2次
 
 文件发送:
 - send_file: 将文件发送给用户
