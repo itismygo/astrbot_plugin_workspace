@@ -87,26 +87,6 @@
     "default": "",
     "_special": "select_provider"
   },
-  "enable_screenshots": {
-    "description": "启用网页截图功能（需要安装 Playwright）",
-    "type": "bool",
-    "default": true
-  },
-  "max_screenshots": {
-    "description": "单次验证最大截图数量",
-    "type": "int",
-    "default": 3
-  },
-  "screenshot_timeout": {
-    "description": "截图超时时间（秒）",
-    "type": "int",
-    "default": 30
-  },
-  "urlscan_api_key": {
-    "description": "urlscan.io API Key（截图备用方案，可选）",
-    "type": "string",
-    "default": ""
-  },
   "max_search_results": {
     "description": "新闻验证时最大搜索结果数量",
     "type": "int",
@@ -131,5 +111,15 @@
     "description": "语言客观性权重（0-1）",
     "type": "float",
     "default": 0.2
+  },
+  "render_max_width": {
+    "description": "Markdown 渲染图片最大宽度（像素）",
+    "type": "int",
+    "default": 800
+  },
+  "render_padding": {
+    "description": "Markdown 渲染图片内边距（像素）",
+    "type": "int",
+    "default": 40
   }
 }

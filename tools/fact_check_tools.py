@@ -14,7 +14,6 @@ from ..credibility import CredibilityEvaluator, SourceRegistry
 from .fact_extractor import FactExtractor, FactPoint
 from .news_analyzer import AnalysisResult, NewsAnalyzer
 from .report_generator import ReportGenerator
-from .screenshot_tool import ScreenshotTool
 
 
 @dataclass
@@ -39,7 +38,6 @@ class VerificationResult:
     detailed_analysis: str
     recommendations: list[str]
     report_path: str | None = None
-    screenshots: list[str] = field(default_factory=list)
     fact_points: list[FactPoint] = field(default_factory=list)
 
 
@@ -56,12 +54,9 @@ class FactCheckTools:
         self.fact_extractor = FactExtractor(plugin)
         self.news_analyzer = NewsAnalyzer()
         self.report_generator = ReportGenerator(plugin)
-        self.screenshot_tool = ScreenshotTool(plugin)
 
         # 配置
         self.max_search_results = plugin.config.get("max_search_results", 10)
-        self.enable_screenshots = plugin.config.get("enable_screenshots", True)
-        self.max_screenshots = plugin.config.get("max_screenshots", 3)
 
     def extract_facts(self, text: str, min_verifiability: str = "medium") -> list[FactPoint]:
         """
@@ -107,6 +102,13 @@ class FactCheckTools:
         evaluated = []
 
         for result in results[:self.max_search_results]:
+            # 处理可能的字符串类型（LLM 可能传入格式不一致的数据）
+            if isinstance(result, str):
+                logger.warning(f"跳过非字典类型的搜索结果: {result[:50]}...")
+                continue
+            if not isinstance(result, dict):
+                continue
+
             url = result.get("url", "")
             title = result.get("title", "")
             snippet = result.get("snippet", result.get("description", ""))
@@ -148,6 +150,13 @@ class FactCheckTools:
         evaluated = []
 
         for result in results[:self.max_search_results]:
+            # 处理可能的字符串类型（LLM 可能传入格式不一致的数据）
+            if isinstance(result, str):
+                logger.warning(f"跳过非字典类型的搜索结果: {result[:50]}...")
+                continue
+            if not isinstance(result, dict):
+                continue
+
             url = result.get("url", "")
             title = result.get("title", "")
             snippet = result.get("snippet", result.get("description", ""))
@@ -225,45 +234,12 @@ class FactCheckTools:
 
         return self.news_analyzer.analyze(claim, sources, original_text)
 
-    async def take_evidence_screenshots(
-        self,
-        urls: list[str],
-        workspace: str
-    ) -> list[str]:
-        """
-        对证据网页进行截图
-
-        Args:
-            urls: URL 列表
-            workspace: 工作区路径
-
-        Returns:
-            截图文件路径列表
-        """
-        if not self.enable_screenshots:
-            return []
-
-        screenshots = []
-        results = await self.screenshot_tool.batch_screenshot(
-            urls[:self.max_screenshots],
-            workspace
-        )
-
-        for result in results:
-            if result.get("path"):
-                screenshots.append(result["path"])
-            elif result.get("error"):
-                logger.warning(f"截图失败 {result['url']}: {result['error']}")
-
-        return screenshots
-
     async def generate_report(
         self,
         claim: str,
         analysis: AnalysisResult,
         evaluated_results: list[SearchResult],
-        workspace: str,
-        screenshots: list[str] = None
+        workspace: str
     ) -> str:
         """
         生成验证报告
@@ -273,7 +249,6 @@ class FactCheckTools:
             analysis: 分析结果
             evaluated_results: 评估后的搜索结果
             workspace: 工作区路径
-            screenshots: 截图文件路径列表
 
         Returns:
             报告文件路径
@@ -295,8 +270,7 @@ class FactCheckTools:
             source_analysis=source_analysis,
             detailed_analysis=analysis.detailed_analysis,
             recommendations=analysis.recommendations,
-            workspace=workspace,
-            screenshots=screenshots
+            workspace=workspace
         )
 
     async def verify_claim(
@@ -305,8 +279,7 @@ class FactCheckTools:
         search_results: list[dict],
         workspace: str,
         original_text: str = "",
-        generate_report: bool = True,
-        take_screenshots: bool = True
+        generate_report: bool = True
     ) -> VerificationResult:
         """
         完整的声明验证流程
@@ -317,7 +290,6 @@ class FactCheckTools:
             workspace: 工作区路径
             original_text: 原始新闻文本
             generate_report: 是否生成报告
-            take_screenshots: 是否截图
 
         Returns:
             验证结果
@@ -328,28 +300,14 @@ class FactCheckTools:
         # 2. 分析结果
         analysis = self.analyze_results(claim, evaluated, original_text)
 
-        # 3. 截图（可选）
-        screenshots = []
-        if take_screenshots and self.enable_screenshots:
-            # 选择高可信度来源进行截图
-            high_credibility_urls = [
-                r.url for r in evaluated
-                if r.credibility_score >= 70
-            ][:self.max_screenshots]
-
-            if high_credibility_urls:
-                screenshots = await self.take_evidence_screenshots(
-                    high_credibility_urls, workspace
-                )
-
-        # 4. 生成报告（可选）
+        # 3. 生成报告（可选）
         report_path = None
         if generate_report:
             report_path = await self.generate_report(
-                claim, analysis, evaluated, workspace, screenshots
+                claim, analysis, evaluated, workspace
             )
 
-        # 5. 构建结果
+        # 4. 构建结果
         source_analysis = [
             {
                 "url": r.url,
@@ -369,8 +327,7 @@ class FactCheckTools:
             key_findings=analysis.key_findings,
             detailed_analysis=analysis.detailed_analysis,
             recommendations=analysis.recommendations,
-            report_path=report_path,
-            screenshots=screenshots
+            report_path=report_path
         )
 
     async def verify_news(
@@ -378,8 +335,7 @@ class FactCheckTools:
         news_text: str,
         search_results: list[dict],
         workspace: str,
-        generate_report: bool = True,
-        take_screenshots: bool = True
+        generate_report: bool = True
     ) -> VerificationResult:
         """
         完整的新闻验证流程（包含事实点提取）
@@ -389,7 +345,6 @@ class FactCheckTools:
             search_results: 搜索结果
             workspace: 工作区路径
             generate_report: 是否生成报告
-            take_screenshots: 是否截图
 
         Returns:
             验证结果
@@ -406,8 +361,7 @@ class FactCheckTools:
             search_results=search_results,
             workspace=workspace,
             original_text=news_text,
-            generate_report=generate_report,
-            take_screenshots=take_screenshots
+            generate_report=generate_report
         )
 
         # 4. 附加事实点信息
@@ -425,26 +379,57 @@ class FactCheckTools:
         Returns:
             格式化的文本
         """
+        # 根据评分确定可信度等级
+        score = result.credibility_score
+        if score >= 80:
+            level = "高可信度"
+            emoji = "[真实]"
+        elif score >= 60:
+            level = "中等可信度"
+            emoji = "[部分真实]"
+        elif score >= 40:
+            level = "低可信度"
+            emoji = "[无法验证]"
+        else:
+            level = "不可信"
+            emoji = "[可能虚假]"
+
         lines = [
-            f"验证结论: {result.verdict}",
-            f"可信度评分: {result.credibility_score:.0f}/100",
+            f"{emoji} {result.verdict}",
+            f"可信度评分: {score:.0f}/100 ({level})",
             "",
-            "主要发现:",
         ]
 
-        for finding in result.key_findings[:3]:
-            lines.append(f"• {finding}")
+        # 来源分析摘要
+        if result.source_analysis:
+            high_cred = [s for s in result.source_analysis if s.get("credibility_score", 0) >= 70]
+            support_count = sum(1 for s in result.source_analysis if s.get("supports", False))
 
-        lines.append("")
+            lines.append(f"来源分析: 共{len(result.source_analysis)}个来源")
+            lines.append(f"  - 高可信度来源: {len(high_cred)}个")
+            lines.append(f"  - 支持该声明: {support_count}个")
 
+            # 列出前3个高可信度来源
+            if high_cred:
+                lines.append("  - 主要来源:")
+                for src in high_cred[:3]:
+                    name = src.get("source_name", "未知")
+                    score_src = src.get("credibility_score", 0)
+                    lines.append(f"    {name} ({score_src:.0f}分)")
+            lines.append("")
+
+        # 主要发现
+        if result.key_findings:
+            lines.append("主要发现:")
+            for finding in result.key_findings[:3]:
+                lines.append(f"  - {finding}")
+            lines.append("")
+
+        # 建议
         if result.recommendations:
             lines.append("建议:")
             for rec in result.recommendations[:2]:
-                lines.append(f"• {rec}")
-
-        if result.report_path:
-            lines.append("")
-            lines.append("详细报告已生成")
+                lines.append(f"  - {rec}")
 
         return "\n".join(lines)
 

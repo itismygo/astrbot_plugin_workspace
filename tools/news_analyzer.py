@@ -91,17 +91,40 @@ class NewsAnalyzer:
         if len(sources) < 2:
             return {"consistent": False, "score": 50, "reason": "来源不足"}
 
-        # 检查高可信度来源是否存在
+        # 统计各级别来源数量
         high_credibility = [s for s in sources if s.get("credibility_score", 0) >= 80]
+        medium_credibility = [s for s in sources if 50 <= s.get("credibility_score", 0) < 80]
+        total_credible = len(high_credibility) + len(medium_credibility)
 
+        # 多个权威来源
         if len(high_credibility) >= 2:
-            return {"consistent": True, "score": 90, "reason": "多个权威来源报道"}
-        elif len(high_credibility) == 1:
-            return {"consistent": True, "score": 70, "reason": "有权威来源报道"}
-        elif len(sources) >= 3:
-            return {"consistent": True, "score": 55, "reason": "多个来源报道但缺乏权威来源"}
-        else:
-            return {"consistent": False, "score": 40, "reason": "缺乏权威来源"}
+            return {"consistent": True, "score": 95, "reason": "多个权威来源一致报道"}
+
+        # 1个权威 + 多个中等
+        if len(high_credibility) == 1 and len(medium_credibility) >= 2:
+            return {"consistent": True, "score": 88, "reason": "权威来源报道，多个中等来源佐证"}
+
+        # 1个权威来源
+        if len(high_credibility) == 1:
+            return {"consistent": True, "score": 75, "reason": "有权威来源报道"}
+
+        # 多个中等可信度来源一致报道（关键改进）
+        if len(medium_credibility) >= 4:
+            return {"consistent": True, "score": 85, "reason": "多个中等可信度来源一致报道"}
+        if len(medium_credibility) >= 3:
+            return {"consistent": True, "score": 78, "reason": "3个以上中等可信度来源报道"}
+        if len(medium_credibility) >= 2:
+            return {"consistent": True, "score": 70, "reason": "多个中等可信度来源报道"}
+
+        # 有一些可信来源
+        if total_credible >= 2:
+            return {"consistent": True, "score": 60, "reason": "有多个来源报道"}
+
+        # 来源较少或可信度较低
+        if len(sources) >= 3:
+            return {"consistent": True, "score": 55, "reason": "多个来源报道但可信度一般"}
+
+        return {"consistent": False, "score": 40, "reason": "缺乏可信来源"}
 
     def _determine_verdict(
         self,
@@ -111,15 +134,36 @@ class NewsAnalyzer:
         """确定验证结论"""
         avg_score = source_stats.get("avg_score", 0)
         consistency_score = consistency.get("score", 50)
+        total_sources = source_stats.get("total", 0)
+        high_count = source_stats.get("high", 0)
+        medium_count = source_stats.get("medium", 0)
 
-        # 综合评分
-        overall = avg_score * 0.6 + consistency_score * 0.4
+        # 基础综合评分
+        overall = avg_score * 0.5 + consistency_score * 0.5
 
-        if overall >= 80:
+        # 来源数量加成（多个来源一致报道提升可信度）
+        source_bonus = 0
+        if total_sources >= 5:
+            source_bonus = 10
+        elif total_sources >= 3:
+            source_bonus = 5
+
+        # 可信来源数量加成
+        credible_count = high_count + medium_count
+        if credible_count >= 4:
+            source_bonus += 8
+        elif credible_count >= 3:
+            source_bonus += 5
+        elif credible_count >= 2:
+            source_bonus += 3
+
+        overall = min(100, overall + source_bonus)
+
+        if overall >= 75:
             return "真实", overall
-        elif overall >= 60:
+        elif overall >= 55:
             return "部分真实", overall
-        elif overall >= 40:
+        elif overall >= 35:
             return "无法验证", overall
         else:
             return "可能虚假", overall

@@ -481,16 +481,12 @@ FACT_CHECKER_AGENT_INSTRUCTIONS = """你是新闻验证专家 负责验证新闻
   参数: claim(待验证声明) evaluated_results(评估后的结果) original_text(原文)
   返回: 分析结果 包含结论 置信度 主要发现 建议
 
-- take_screenshots: 对证据网页进行截图
-  参数: urls(URL列表) workspace(工作区路径)
-  返回: 截图文件路径列表
-
 - generate_report: 生成PDF验证报告
-  参数: claim verdict credibility_score source_analysis detailed_analysis recommendations workspace screenshots
+  参数: claim verdict credibility_score source_analysis detailed_analysis recommendations workspace
   返回: 报告文件路径
 
 - verify_news: 完整的新闻验证流程
-  参数: news_text(新闻文本) search_results(搜索结果) workspace(工作区) generate_report(是否生成报告) take_screenshots(是否截图)
+  参数: news_text(新闻文本) search_results(搜索结果) workspace(工作区) generate_report(是否生成报告)
   返回: 完整验证结果
 
 搜索工具(通过MCP):
@@ -505,9 +501,8 @@ FACT_CHECKER_AGENT_INSTRUCTIONS = """你是新闻验证专家 负责验证新闻
 4. 通过 MCP 搜索工具执行搜索
 5. 使用 evaluate_sources 评估搜索结果的可信度
 6. 使用 analyze_results 生成分析结论
-7. 可选: 使用 take_screenshots 截取证据网页
-8. 使用 generate_report 生成PDF报告
-9. 向用户返回简要结论和报告路径
+7. 使用 generate_report 生成PDF报告
+8. 向用户返回简要结论和报告路径
 
 可信度评估标准:
 - 高可信度来源(80-100分): 官方媒体 权威机构 知名国际媒体 专业事实核查网站

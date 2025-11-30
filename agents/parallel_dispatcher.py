@@ -196,7 +196,7 @@ class ParallelDispatcher:
                 "instructions": FACT_CHECKER_AGENT_INSTRUCTIONS,
                 "tools": [
                     "extract_facts", "evaluate_sources", "analyze_results",
-                    "take_screenshots", "generate_report", "verify_news",
+                    "generate_report", "verify_news",
                     "read_file", "write_file", "list_files"
                 ],
                 "provider_id": getattr(self.plugin, "fact_checker_provider_id", None),

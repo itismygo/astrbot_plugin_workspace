@@ -3,9 +3,9 @@
 """
 from .fact_check_tools import FactCheckTools, SearchResult, VerificationResult
 from .fact_extractor import FactExtractor, FactPoint
+from .markdown_renderer import MarkdownRenderer
 from .news_analyzer import AnalysisResult, NewsAnalyzer
 from .report_generator import ReportGenerator
-from .screenshot_tool import ScreenshotTool
 from .search_tools import SearchTools
 from .summarizer_tools import SummarizerTools
 
@@ -21,10 +21,10 @@ __all__ = [
     "AnalysisResult",
     # 报告生成
     "ReportGenerator",
-    # 截图工具
-    "ScreenshotTool",
     # 验证工具
     "FactCheckTools",
     "SearchResult",
     "VerificationResult",
+    # Markdown 渲染
+    "MarkdownRenderer",
 ]

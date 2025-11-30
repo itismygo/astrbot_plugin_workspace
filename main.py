@@ -25,7 +25,7 @@ from .agents.orchestrator import (
 from .security import CommandFilter, PathSandbox, PermissionManager
 from .security.sandbox import SecurityError
 from .storage import FileCleaner, QuotaManager
-from .tools import FactCheckTools, SearchTools, SummarizerTools
+from .tools import FactCheckTools, MarkdownRenderer, SearchTools, SummarizerTools
 
 
 @register("workspace", "AstrBot", "安全工作区插件 - 多Agent架构，提供文件操作、命令执行等能力", "2.0.0")
@@ -79,6 +79,9 @@ class WorkspacePlugin(Star):
             self.fact_check_tools = FactCheckTools(self)
         else:
             self.fact_check_tools = None
+
+        # 初始化 Markdown 渲染器
+        self.markdown_renderer = MarkdownRenderer(self)
 
         # 初始化文件清理器
         self.file_cleaner = FileCleaner(self, self.config)
@@ -1479,8 +1482,7 @@ class WorkspacePlugin(Star):
         event: AstrMessageEvent,
         news_text: str,
         search_results: list,
-        generate_report: bool = True,
-        take_screenshots: bool = False
+        generate_report: bool = True
     ) -> str:
         """
         完整的新闻验证流程。综合评估新闻真实性并生成验证报告。
@@ -1500,7 +1502,6 @@ class WorkspacePlugin(Star):
             news_text (str): 新闻文本内容
             search_results (list): 搜索结果列表
             generate_report (bool): 是否生成PDF报告，默认 True
-            take_screenshots (bool): 是否截取证据网页，默认 False
 
         Returns:
             验证结论和报告路径
@@ -1517,17 +1518,24 @@ class WorkspacePlugin(Star):
                 news_text=news_text,
                 search_results=search_results,
                 workspace=workspace,
-                generate_report=generate_report,
-                take_screenshots=take_screenshots
+                generate_report=generate_report
             )
 
             # 格式化输出
             output = self.fact_check_tools.format_brief_result(result)
 
+            # 报告信息
             if result.report_path:
-                # 提取相对路径
                 rel_path = os.path.relpath(result.report_path, workspace)
-                output += f"\n\n报告已保存: {rel_path}"
+                # 判断报告格式
+                if rel_path.endswith(".pdf"):
+                    output += f"\n\n[报告] PDF报告已生成: {rel_path}"
+                    output += "\n提示: 使用 send_file 工具发送报告给用户"
+                elif rel_path.endswith(".html"):
+                    output += f"\n\n[报告] HTML报告已生成: {rel_path}"
+                    output += "\n提示: 可使用 convert_office 转换为PDF后发送，或直接发送HTML文件"
+                else:
+                    output += f"\n\n[报告] 报告已生成: {rel_path}"
 
             return output
 
@@ -1583,6 +1591,57 @@ class WorkspacePlugin(Star):
 
         except Exception as e:
             return f"生成验证计划失败: {str(e)}"
+
+    # ==================== Markdown 渲染工具 ====================
+
+    @filter.llm_tool(name="render_markdown")
+    async def render_markdown(
+        self,
+        event: AstrMessageEvent,
+        content: str,
+        title: str = ""
+    ) -> str:
+        """
+        将 Markdown 格式的文本渲染为图片发送给用户。当回复内容包含复杂格式（表格、代码块、列表等）时使用此工具。
+
+        使用场景：
+        - 回复包含表格、代码块等复杂格式
+        - 需要更好的排版展示效果
+        - 长文本回复需要更好的阅读体验
+
+        注意事项：
+        - 仅用于格式化展示，不要用于普通文本回复
+        - 内容应为有效的 Markdown 格式
+        - 图片会自动发送给用户
+
+        Args:
+            content (str): Markdown 格式的文本内容
+            title (str): 可选的标题，显示在内容顶部
+
+        Returns:
+            渲染结果
+
+        回复要求：不使用markdown格式 不使用星号或特殊符号 简洁直接回复
+        """
+        workspace = self._get_user_workspace(event)
+
+        image_path, error = await self.markdown_renderer.render_to_image(
+            markdown_text=content,
+            workspace=workspace,
+            title=title
+        )
+
+        if image_path:
+            try:
+                umo = event.unified_msg_origin
+                chain = [Comp.Image.fromFileSystem(image_path)]
+                await self.context.send_message(umo, MessageChain(chain))
+                return "内容已渲染为图片并发送"
+            except Exception as e:
+                logger.error(f"发送渲染图片失败: {e}")
+                return f"渲染成功但发送失败: {str(e)}"
+        else:
+            return f"渲染失败: {error}"
 
     # ==================== Orchestrator 入口（可选） ====================
     #
