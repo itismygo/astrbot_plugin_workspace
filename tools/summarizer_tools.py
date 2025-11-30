@@ -1,8 +1,8 @@
 """
 批量总结工具
 """
-import os
 import fnmatch
+import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -65,7 +65,7 @@ class SummarizerTools:
                     file_size = os.path.getsize(full_path)
                     size_str = self.plugin._format_size(file_size)
                     results.append(f"{name} ({size_str})")
-                except Exception as e:
+                except Exception:
                     results.append(f"{name} (读取失败)")
 
             # 简洁格式返回

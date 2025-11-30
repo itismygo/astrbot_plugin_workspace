@@ -1,13 +1,12 @@
 """
 自定义 HandoffTool - 支持为子 Agent 指定模型提供商
 """
-from typing import Generic, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Generic
 
-from astrbot.core.agent.agent import Agent
+from astrbot.core.agent.hooks import BaseAgentRunHooks
 from astrbot.core.agent.run_context import TContext
 from astrbot.core.agent.tool import FunctionTool
-from astrbot.core.agent.hooks import BaseAgentRunHooks
 
 
 @dataclass

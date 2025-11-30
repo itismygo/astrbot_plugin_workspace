@@ -2,26 +2,30 @@
 AstrBot Workspace 插件 - 安全工作区，提供文件操作和命令执行能力
 支持多 Agent 架构，包括文件处理、命令执行、文件发送、批量总结、搜索分析等功能
 """
-import os
 import asyncio
 import fnmatch
-import shlex
+import os
 import re
+import shlex
 from datetime import datetime
-from typing import List
 
-from astrbot.api.event import filter, AstrMessageEvent, MessageChain
-from astrbot.api.event.filter import EventMessageType
-from astrbot.api.star import Context, Star, register, StarTools
-from astrbot.api.message_components import Plain, Image, File, Video, Record
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent, MessageChain, filter
+from astrbot.api.event.filter import EventMessageType
+from astrbot.api.message_components import File, Image, Record, Video
+from astrbot.api.star import Context, Star, StarTools, register
 
-from .security import PathSandbox, PermissionManager, CommandFilter
+from .agents.orchestrator import (
+    create_configurable_handoff_tools,
+    create_configurable_sub_agents,
+    create_handoff_tools,
+    create_sub_agents,
+)
+from .security import CommandFilter, PathSandbox, PermissionManager
 from .security.sandbox import SecurityError
-from .storage import QuotaManager
-from .tools import SummarizerTools, SearchTools
-from .agents.orchestrator import create_sub_agents, create_handoff_tools
+from .storage import FileCleaner, QuotaManager
+from .tools import FactCheckTools, SearchTools, SummarizerTools
 
 
 @register("workspace", "AstrBot", "安全工作区插件 - 多Agent架构，提供文件操作、命令执行等能力", "2.0.0")
@@ -60,15 +64,40 @@ class WorkspacePlugin(Star):
         self.sub_agents = None
         self.handoff_tools = None
 
+        # 新增代理配置
+        self.enable_code_analyzer = self.config.get("enable_code_analyzer", True)
+        self.enable_task_planner = self.config.get("enable_task_planner", True)
+        self.code_analyzer_provider_id = self.config.get("code_analyzer_provider_id", "")
+        self.task_planner_provider_id = self.config.get("task_planner_provider_id", "")
+
+        # 新闻验证代理配置
+        self.enable_fact_checker = self.config.get("enable_fact_checker", True)
+        self.fact_checker_provider_id = self.config.get("fact_checker_provider_id", "")
+
+        # 初始化新闻验证工具
+        if self.enable_fact_checker:
+            self.fact_check_tools = FactCheckTools(self)
+        else:
+            self.fact_check_tools = None
+
+        # 初始化文件清理器
+        self.file_cleaner = FileCleaner(self, self.config)
+
+        # 初始化并行调度器
+        from .agents.parallel_dispatcher import ParallelDispatcher
+        self.parallel_dispatcher = ParallelDispatcher(self)
+
         logger.info(f"Workspace 插件 v2.0 已加载，数据目录: {self.data_dir}")
 
     async def initialize(self):
-        """插件激活时调用，注册 HandoffTool"""
+        """插件激活时调用，注册 HandoffTool 和启动清理任务"""
         await self._register_handoff_tools()
+        await self.file_cleaner.start()
 
     async def terminate(self):
-        """插件禁用时调用，清理 HandoffTool"""
+        """插件禁用时调用，清理 HandoffTool 和停止清理任务"""
         await self._unregister_handoff_tools()
+        await self.file_cleaner.stop()
 
     async def _register_handoff_tools(self):
         """注册 HandoffTool 到 AstrBot 的工具管理器（延迟注册）"""
@@ -79,12 +108,19 @@ class WorkspacePlugin(Star):
             # 获取工具管理器
             from astrbot.core.provider.register import llm_tools as tool_manager
 
-            # 创建子 Agent 和 HandoffTools
+            # 创建标准子 Agent 和 HandoffTools
             self.sub_agents = create_sub_agents()
             self.handoff_tools = create_handoff_tools(self.sub_agents)
 
-            # 注册 HandoffTools 到工具管理器
-            for handoff_tool in self.handoff_tools:
+            # 创建可配置的子 Agent（新增代理，支持独立模型配置）
+            configurable_agents = create_configurable_sub_agents(self.config)
+            configurable_handoff_tools = create_configurable_handoff_tools(configurable_agents)
+
+            # 合并所有 HandoffTools
+            all_handoff_tools = self.handoff_tools + configurable_handoff_tools
+
+            # 注册所有 HandoffTools 到工具管理器
+            for handoff_tool in all_handoff_tools:
                 # 检查是否已存在
                 existing = tool_manager.get_func(handoff_tool.name)
                 if existing:
@@ -92,7 +128,11 @@ class WorkspacePlugin(Star):
                 tool_manager.func_list.append(handoff_tool)
                 logger.info(f"已注册 HandoffTool: {handoff_tool.name}")
 
-            logger.info(f"多 Agent 模式已启用，注册了 {len(self.handoff_tools)} 个 HandoffTool")
+            # 更新实例变量
+            self.handoff_tools = all_handoff_tools
+            self.sub_agents.update(configurable_agents)
+
+            logger.info(f"多 Agent 模式已启用，注册了 {len(all_handoff_tools)} 个 HandoffTool")
 
         except Exception as e:
             logger.error(f"注册 HandoffTool 失败: {e}")
@@ -118,7 +158,7 @@ class WorkspacePlugin(Star):
     def _check_permission(self, event: AstrMessageEvent) -> tuple:
         """检查用户权限"""
         user_id = event.get_sender_id()
-        user_role = getattr(event, 'role', '')
+        user_role = getattr(event, "role", "")
         return self.permission.check_permission(user_id, user_role)
 
     def _get_user_workspace(self, event: AstrMessageEvent) -> str:
@@ -189,12 +229,12 @@ class WorkspacePlugin(Star):
             if file_size > 10 * 1024 * 1024:  # 10MB
                 return f"文件过大 ({self._format_size(file_size)})，请使用 start_line 和 max_lines 参数分段读取"
 
-            with open(safe_path, 'r', encoding=encoding, errors='replace') as f:
+            with open(safe_path, encoding=encoding, errors="replace") as f:
                 lines = f.readlines()
 
             total_lines = len(lines)
             selected_lines = lines[start_line:start_line + max_lines]
-            content = ''.join(selected_lines)
+            content = "".join(selected_lines)
 
             # 添加提示信息
             if total_lines > start_line + max_lines:
@@ -264,7 +304,7 @@ class WorkspacePlugin(Star):
             os.makedirs(parent_dir, exist_ok=True)
 
             # 写入文件
-            write_mode = 'w' if mode == "overwrite" else 'a'
+            write_mode = "w" if mode == "overwrite" else "a"
             with open(safe_path, write_mode, encoding=encoding) as f:
                 f.write(content)
 
@@ -322,7 +362,7 @@ class WorkspacePlugin(Star):
             if not os.path.exists(safe_path):
                 return f"文件不存在: {file_path}"
 
-            with open(safe_path, 'r', encoding=encoding, errors='replace') as f:
+            with open(safe_path, encoding=encoding, errors="replace") as f:
                 content = f.read()
 
             if old_content not in content:
@@ -332,7 +372,7 @@ class WorkspacePlugin(Star):
             count = content.count(old_content)
             new_file_content = content.replace(old_content, new_content)
 
-            with open(safe_path, 'w', encoding=encoding) as f:
+            with open(safe_path, "w", encoding=encoding) as f:
                 f.write(new_file_content)
 
             return f"文件编辑成功: {file_path}，替换了 {count} 处内容"
@@ -402,8 +442,8 @@ class WorkspacePlugin(Star):
             if recursive:
                 for root, dirs, files in os.walk(safe_path):
                     rel_root = os.path.relpath(root, workspace)
-                    if rel_root == '.':
-                        rel_root = ''
+                    if rel_root == ".":
+                        rel_root = ""
 
                     for name in sorted(dirs):
                         path = os.path.join(rel_root, name) if rel_root else name
@@ -622,21 +662,21 @@ class WorkspacePlugin(Star):
             )
 
             if process.returncode != 0:
-                error = stderr.decode('utf-8', errors='replace')
+                error = stderr.decode("utf-8", errors="replace")
                 return f"PDF 转换失败 无法完成此操作: {error[:100]}"  # 截断错误信息，告知无法完成
 
-            text_content = stdout.decode('utf-8', errors='replace')
+            text_content = stdout.decode("utf-8", errors="replace")
 
             # 根据输出格式处理
             if output_ext == "txt":
                 final_content = text_content
             elif output_ext == "md":
                 # 简单的 Markdown 格式化
-                lines = text_content.split('\n')
-                final_content = f"# {base_name}\n\n" + '\n'.join(lines)
+                lines = text_content.split("\n")
+                final_content = f"# {base_name}\n\n" + "\n".join(lines)
             elif output_ext == "html":
                 # 简单的 HTML 格式化
-                escaped_text = text_content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                escaped_text = text_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 final_content = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>{base_name}</title></head>
@@ -644,7 +684,7 @@ class WorkspacePlugin(Star):
 </html>"""
 
             # 写入输出文件
-            with open(output_path, 'w', encoding='utf-8') as f:
+            with open(output_path, "w", encoding="utf-8") as f:
                 f.write(final_content)
 
             return f"PDF 转换成功，文件已保存到: outputs/{output_name}。请立即使用 send_file 工具将此文件发送给用户，不要读取文件内容。"
@@ -724,15 +764,15 @@ class WorkspacePlugin(Star):
             )
 
             if process.returncode != 0:
-                error = stderr.decode('utf-8', errors='replace')
+                error = stderr.decode("utf-8", errors="replace")
                 return f"转换失败: {error[:100]}"
 
             # 获取输出文件名
             base_name = os.path.splitext(os.path.basename(input_path))[0]
             # 处理时间戳前缀的文件名
-            if '_' in base_name and base_name.split('_')[0].isdigit():
+            if "_" in base_name and base_name.split("_")[0].isdigit():
                 # 去掉时间戳前缀，如 20251130_082851_文档 -> 文档
-                parts = base_name.split('_', 2)
+                parts = base_name.split("_", 2)
                 if len(parts) >= 3:
                     base_name = parts[2]
             output_name = f"{base_name}.{output_format}"
@@ -821,7 +861,7 @@ class WorkspacePlugin(Star):
             # 处理路径参数，转换为绝对路径
             processed_parts = [cmd_parts[0]]
             for arg in cmd_parts[1:]:
-                if not arg.startswith('-'):
+                if not arg.startswith("-"):
                     # 可能是文件路径，尝试解析
                     try:
                         safe_arg = self.sandbox.resolve_path(arg, workspace)
@@ -852,11 +892,11 @@ class WorkspacePlugin(Star):
 
             result = []
             if stdout:
-                output = stdout.decode('utf-8', errors='replace').strip()
+                output = stdout.decode("utf-8", errors="replace").strip()
                 if output:
                     result.append(f"输出:\n{output}")
             if stderr:
-                error = stderr.decode('utf-8', errors='replace').strip()
+                error = stderr.decode("utf-8", errors="replace").strip()
                 if error:
                     result.append(f"错误:\n{error}")
             if process.returncode != 0:
@@ -873,15 +913,15 @@ class WorkspacePlugin(Star):
         """获取安全的环境变量"""
         # 只保留必要的环境变量，避免泄露敏感信息
         safe_env = {}
-        for key in ['PATH', 'LANG', 'LC_ALL']:
+        for key in ["PATH", "LANG", "LC_ALL"]:
             if key in os.environ:
                 safe_env[key] = os.environ[key]
         # 设置安全的临时目录（使用工作区内的 temp 目录）
         if workspace:
-            temp_dir = os.path.join(workspace, 'temp')
-            safe_env['HOME'] = workspace
-            safe_env['TEMP'] = temp_dir
-            safe_env['TMP'] = temp_dir
+            temp_dir = os.path.join(workspace, "temp")
+            safe_env["HOME"] = workspace
+            safe_env["TEMP"] = temp_dir
+            safe_env["TMP"] = temp_dir
         return safe_env
 
     @filter.llm_tool(name="send_file")
@@ -940,7 +980,7 @@ class WorkspacePlugin(Star):
                 return f"文件过大 ({self._format_size(file_size)})，超过发送限制 ({self._format_size(self.max_send_file_size)})"
 
             # 判断文件类型
-            image_exts = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp']
+            image_exts = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]
             is_image = any(file_name.lower().endswith(ext) for ext in image_exts)
 
             # 使用主动消息发送文件
@@ -1043,7 +1083,7 @@ class WorkspacePlugin(Star):
 
         # 检查消息中是否有文件
         message = event.message_obj
-        if not message or not hasattr(message, 'message'):
+        if not message or not hasattr(message, "message"):
             return
 
         for component in message.message:
@@ -1060,43 +1100,43 @@ class WorkspacePlugin(Star):
             # 根据组件类型获取 URL 和默认扩展名
             file_url = None
             file_path_local = None
-            default_ext = ''
-            type_name = 'file'
-            file_name = 'uploaded_file'
+            default_ext = ""
+            type_name = "file"
+            file_name = "uploaded_file"
 
             # 尝试使用 get_file() 异步获取文件路径
-            if hasattr(component, 'get_file'):
+            if hasattr(component, "get_file"):
                 try:
                     file_path_local = await component.get_file()
                 except Exception as e:
                     logger.debug(f"get_file() 失败: {e}")
 
             if isinstance(component, File):
-                file_url = getattr(component, 'url', None)
+                file_url = getattr(component, "url", None)
                 # 调试：查看 File 组件的所有属性
                 logger.info(f"[调试] File组件属性: name={getattr(component, 'name', None)}, url={file_url}, file={getattr(component, 'file', None)}")
                 logger.info(f"[调试] File组件__dict__: {getattr(component, '__dict__', {})}")
                 # 只从 name 属性获取文件名，避免触发同步下载
-                file_name = getattr(component, 'name', None) or 'uploaded_file'
-                type_name = 'file'
+                file_name = getattr(component, "name", None) or "uploaded_file"
+                type_name = "file"
             elif isinstance(component, Image):
-                file_url = getattr(component, 'url', None)
-                file_name = 'image'
-                default_ext = '.jpg'
-                type_name = 'image'
+                file_url = getattr(component, "url", None)
+                file_name = "image"
+                default_ext = ".jpg"
+                type_name = "image"
             elif isinstance(component, Video):
-                file_url = getattr(component, 'url', None)
-                file_name = 'video'
-                default_ext = '.mp4'
-                type_name = 'video'
+                file_url = getattr(component, "url", None)
+                file_name = "video"
+                default_ext = ".mp4"
+                type_name = "video"
             elif isinstance(component, Record):
-                file_url = getattr(component, 'url', None)
-                file_name = 'audio'
-                default_ext = '.wav'
-                type_name = 'audio'
+                file_url = getattr(component, "url", None)
+                file_name = "audio"
+                default_ext = ".wav"
+                type_name = "audio"
 
             # 如果 file_name 是路径，提取文件名部分
-            if file_name and ('/' in file_name or '\\' in file_name):
+            if file_name and ("/" in file_name or "\\" in file_name):
                 file_name = os.path.basename(file_name)
 
             # 如果没有 URL 也没有本地路径，跳过
@@ -1111,10 +1151,10 @@ class WorkspacePlugin(Star):
             # 生成唯一文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_name = os.path.splitext(file_name)[0]
-            base_name = re.sub(r'[<>:"/\\|?*]', '_', base_name)
+            base_name = re.sub(r'[<>:"/\\|?*]', "_", base_name)
             # 安全检查：防止特殊目录名
-            if base_name in ['.', '..', '']:
-                base_name = 'uploaded_file'
+            if base_name in [".", "..", ""]:
+                base_name = "uploaded_file"
             save_name = f"{timestamp}_{base_name}{ext}"
             save_path = os.path.join(uploads_dir, save_name)
 
@@ -1135,7 +1175,7 @@ class WorkspacePlugin(Star):
                     async with session.get(file_url) as response:
                         if response.status == 200:
                             content = await response.read()
-                            with open(save_path, 'wb') as f:
+                            with open(save_path, "wb") as f:
                                 f.write(content)
                             logger.info(f"{type_name} 已保存 (URL下载): {save_path} [原名: {file_name}]")
                         else:
@@ -1248,6 +1288,301 @@ class WorkspacePlugin(Star):
             )
         except Exception as e:
             return f"搜索失败: {str(e)}"
+
+    @filter.llm_tool(name="parallel_agents")
+    async def parallel_agents(
+        self,
+        event: AstrMessageEvent,
+        tasks: list
+    ) -> str:
+        """
+        并行调用多个子 Agent 执行任务。当需要同时执行多个独立任务时使用此工具。
+
+        使用场景：
+        - 需要同时分析代码结构和规划任务
+        - 需要同时搜索多个方向的内容
+        - 需要同时处理多个独立的文件操作
+        - 任何可以并行执行的多任务场景
+
+        注意事项：
+        - 最多同时执行 5 个 Agent
+        - 每个 Agent 有 120 秒超时限制
+        - 各 Agent 独立执行，互不影响
+        - 结果会汇总后返回
+
+        Args:
+            tasks (list): 任务列表，每个任务是一个字典，包含:
+                - agent_name (str): Agent 名称，可选值:
+                    - code_analyzer_agent: 代码分析专家
+                    - task_planner_agent: 任务规划专家
+                    - file_agent: 文件处理专家
+                    - search_agent: 搜索分析专家
+                    - summarizer_agent: 内容总结专家
+                - task_input (str): 任务描述
+
+        Returns:
+            所有 Agent 的执行结果汇总
+
+        示例:
+            tasks = [
+                {"agent_name": "code_analyzer_agent", "task_input": "分析项目结构"},
+                {"agent_name": "task_planner_agent", "task_input": "规划实施步骤"}
+            ]
+
+        回复要求：不使用markdown格式 不使用星号或特殊符号 简洁直接回复
+        """
+        allowed, msg = self._check_permission(event)
+        if not allowed:
+            return f"权限不足: {msg}"
+
+        from .agents.parallel_dispatcher import AgentTask
+
+        # 解析任务
+        agent_tasks = []
+        for task in tasks:
+            if isinstance(task, dict) and "agent_name" in task and "task_input" in task:
+                agent_tasks.append(AgentTask(
+                    agent_name=task["agent_name"],
+                    task_input=task["task_input"]
+                ))
+
+        if not agent_tasks:
+            return "错误: 未提供有效的任务。每个任务需要包含 agent_name 和 task_input"
+
+        # 并行执行
+        try:
+            results = await self.parallel_dispatcher.dispatch(
+                event=event,
+                tasks=agent_tasks,
+                timeout=120
+            )
+
+            # 格式化结果
+            return self.parallel_dispatcher.format_results(results)
+        except Exception as e:
+            return f"并行执行失败: {str(e)}"
+
+    # ==================== 新闻验证工具 ====================
+
+    @filter.llm_tool(name="extract_facts")
+    async def extract_facts(
+        self,
+        event: AstrMessageEvent,
+        text: str,
+        min_verifiability: str = "medium"
+    ) -> str:
+        """
+        从新闻文本中提取可验证的事实点。用于在验证新闻前识别哪些内容可以被核实。
+
+        使用场景：
+        - 用户提供一段新闻文本，需要识别其中可验证的事实
+        - 在进行新闻验证前，先提取关键事实点
+        - 生成针对性的搜索查询
+
+        事实类别：
+        - time: 时间相关（日期、时间点）
+        - place: 地点相关（省市区县、具体位置）
+        - person: 人物相关（官员、专家、发言人）
+        - number: 数字相关（统计数据、金额、数量）
+        - event: 事件相关（发生、举行、发布）
+        - quote: 引用相关（某人表示、称、说）
+
+        Args:
+            text (str): 新闻文本内容
+            min_verifiability (str): 最低可验证性要求，可选 high/medium/low，默认 medium
+
+        Returns:
+            提取的事实点列表，包含陈述、类别、可验证性和建议搜索词
+
+        回复要求：不使用markdown格式 不使用星号或特殊符号 简洁直接回复
+        """
+        if not self.fact_check_tools:
+            return "新闻验证功能未启用"
+
+        try:
+            facts = self.fact_check_tools.extract_facts(text, min_verifiability)
+
+            if not facts:
+                return "未能从文本中提取到可验证的事实点"
+
+            # 格式化输出
+            lines = [f"共提取到 {len(facts)} 个可验证事实点：", ""]
+            for i, fact in enumerate(facts, 1):
+                verifiability_cn = {"high": "高", "medium": "中", "low": "低"}.get(fact.verifiability, "未知")
+                statement = fact.statement[:50] + "..." if len(fact.statement) > 50 else fact.statement
+                lines.append(f"{i}. [{verifiability_cn}可验证性] {statement}")
+                lines.append(f"   类别: {fact.category}")
+                lines.append(f"   建议搜索: {fact.search_query}")
+                lines.append("")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            return f"提取事实点失败: {str(e)}"
+
+    @filter.llm_tool(name="evaluate_sources")
+    async def evaluate_sources(
+        self,
+        event: AstrMessageEvent,
+        search_results: list,
+        claim: str = ""
+    ) -> str:
+        """
+        评估搜索结果的来源可信度。用于判断搜索到的信息来源是否可靠。
+
+        使用场景：
+        - 对搜索引擎返回的结果进行可信度评估
+        - 识别权威来源和不可靠来源
+        - 为新闻验证提供来源分析
+
+        可信度等级：
+        - 高可信度(80-100): 官方媒体、权威机构、知名国际媒体
+        - 中等可信度(50-79): 地方媒体、行业媒体、门户网站
+        - 低可信度(0-49): 自媒体、论坛、未知来源
+
+        Args:
+            search_results (list): 搜索结果列表，每个结果应包含 url、title、snippet 字段
+            claim (str): 原始声明（可选，用于判断来源是否支持该声明）
+
+        Returns:
+            评估后的来源列表，按可信度排序
+
+        回复要求：不使用markdown格式 不使用星号或特殊符号 简洁直接回复
+        """
+        if not self.fact_check_tools:
+            return "新闻验证功能未启用"
+
+        try:
+            evaluated = self.fact_check_tools.evaluate_search_results(search_results, claim)
+
+            if not evaluated:
+                return "没有可评估的搜索结果"
+
+            lines = [f"共评估 {len(evaluated)} 个来源：", ""]
+            for i, result in enumerate(evaluated, 1):
+                score = result.credibility_score
+                level = "高" if score >= 80 else ("中" if score >= 50 else "低")
+                title = result.title[:40] + "..." if len(result.title) > 40 else result.title
+                lines.append(f"{i}. [{level}可信度 {score:.0f}分] {result.source_name}")
+                lines.append(f"   标题: {title}")
+                lines.append(f"   URL: {result.url}")
+                lines.append("")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            return f"评估来源失败: {str(e)}"
+
+    @filter.llm_tool(name="verify_news")
+    async def verify_news(
+        self,
+        event: AstrMessageEvent,
+        news_text: str,
+        search_results: list,
+        generate_report: bool = True,
+        take_screenshots: bool = False
+    ) -> str:
+        """
+        完整的新闻验证流程。综合评估新闻真实性并生成验证报告。
+
+        使用场景：
+        - 用户提供新闻文本和搜索结果，需要完整验证
+        - 生成新闻可信度评分和验证结论
+        - 生成PDF验证报告
+
+        验证结论类型：
+        - 真实: 综合评分>=80，多个权威来源证实
+        - 部分真实: 综合评分60-79，部分内容可证实
+        - 无法验证: 综合评分40-59，缺乏足够证据
+        - 可能虚假: 综合评分<40，与权威来源矛盾
+
+        Args:
+            news_text (str): 新闻文本内容
+            search_results (list): 搜索结果列表
+            generate_report (bool): 是否生成PDF报告，默认 True
+            take_screenshots (bool): 是否截取证据网页，默认 False
+
+        Returns:
+            验证结论和报告路径
+
+        回复要求：不使用markdown格式 不使用星号或特殊符号 简洁直接回复
+        """
+        if not self.fact_check_tools:
+            return "新闻验证功能未启用"
+
+        workspace = self._get_user_workspace(event)
+
+        try:
+            result = await self.fact_check_tools.verify_news(
+                news_text=news_text,
+                search_results=search_results,
+                workspace=workspace,
+                generate_report=generate_report,
+                take_screenshots=take_screenshots
+            )
+
+            # 格式化输出
+            output = self.fact_check_tools.format_brief_result(result)
+
+            if result.report_path:
+                # 提取相对路径
+                rel_path = os.path.relpath(result.report_path, workspace)
+                output += f"\n\n报告已保存: {rel_path}"
+
+            return output
+
+        except Exception as e:
+            logger.error(f"新闻验证失败: {e}", exc_info=True)
+            return f"新闻验证失败: {str(e)}"
+
+    @filter.llm_tool(name="get_verification_plan")
+    async def get_verification_plan(
+        self,
+        event: AstrMessageEvent,
+        news_text: str
+    ) -> str:
+        """
+        获取新闻验证计划。分析新闻文本，生成验证步骤和搜索建议。
+
+        使用场景：
+        - 在开始验证前，了解需要验证哪些内容
+        - 获取针对性的搜索查询建议
+        - 规划验证工作的优先级
+
+        Args:
+            news_text (str): 新闻文本内容
+
+        Returns:
+            验证计划，包含事实点分类和搜索建议
+
+        回复要求：不使用markdown格式 不使用星号或特殊符号 简洁直接回复
+        """
+        if not self.fact_check_tools:
+            return "新闻验证功能未启用"
+
+        try:
+            plan = self.fact_check_tools.get_verification_plan(news_text)
+
+            lines = [
+                f"验证计划 - 共 {plan['total_facts']} 个事实点",
+                "",
+                f"高优先级: {len(plan['high_priority'])} 个",
+                f"中优先级: {len(plan['medium_priority'])} 个",
+                f"低优先级: {len(plan['low_priority'])} 个",
+                "",
+                "建议搜索查询:",
+            ]
+
+            for i, query in enumerate(plan["search_queries"][:5], 1):
+                lines.append(f"  {i}. {query}")
+
+            if len(plan["search_queries"]) > 5:
+                lines.append(f"  ... 还有 {len(plan['search_queries']) - 5} 个查询")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            return f"生成验证计划失败: {str(e)}"
 
     # ==================== Orchestrator 入口（可选） ====================
     #

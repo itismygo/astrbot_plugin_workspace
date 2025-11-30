@@ -1,7 +1,6 @@
 """
 用户权限管理器
 """
-from typing import Tuple, Set
 
 
 class PermissionManager:
@@ -18,17 +17,17 @@ class PermissionManager:
 
         # 解析白名单用户
         whitelist_str = config.get("whitelist_users", "")
-        self.whitelist_users: Set[str] = set(
+        self.whitelist_users: set[str] = set(
             u.strip() for u in whitelist_str.split(",") if u.strip()
         )
 
         # 解析管理员用户
         admin_str = config.get("admin_users", "")
-        self.admin_users: Set[str] = set(
+        self.admin_users: set[str] = set(
             u.strip() for u in admin_str.split(",") if u.strip()
         )
 
-    def check_permission(self, user_id: str, user_role: str = "") -> Tuple[bool, str]:
+    def check_permission(self, user_id: str, user_role: str = "") -> tuple[bool, str]:
         """
         检查用户是否有权限使用插件功能
 
@@ -73,6 +72,6 @@ class PermissionManager:
         """从白名单移除用户"""
         self.whitelist_users.discard(str(user_id))
 
-    def get_whitelist(self) -> Set[str]:
+    def get_whitelist(self) -> set[str]:
         """获取白名单用户列表"""
         return self.whitelist_users.copy()

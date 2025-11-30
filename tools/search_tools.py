@@ -1,11 +1,11 @@
 """
 搜索工具
 """
-import os
 import fnmatch
-import re
 import logging
-from typing import TYPE_CHECKING, List
+import os
+import re
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..main import WorkspacePlugin
@@ -82,7 +82,7 @@ class SearchTools:
                             results.append(f"文件: {rel_path}\n{match}\n")
                             total_matches += 1
 
-                except (IOError, OSError, UnicodeDecodeError) as e:
+                except (OSError, UnicodeDecodeError) as e:
                     # 跳过无法读取的文件（权限问题、编码问题等）
                     logger.debug(f"跳过文件 {rel_path}: {e}")
                     continue
@@ -107,7 +107,7 @@ class SearchTools:
         file_path: str,
         keyword: str,
         context_lines: int = 2
-    ) -> List[str]:
+    ) -> list[str]:
         """
         在单个文件中搜索关键词
 
@@ -122,7 +122,7 @@ class SearchTools:
         results = []
 
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            with open(file_path, encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
 
             # 编译正则表达式（忽略大小写）
@@ -141,7 +141,7 @@ class SearchTools:
 
                     results.append("\n".join(context))
 
-        except (IOError, OSError, UnicodeDecodeError) as e:
+        except (OSError, UnicodeDecodeError) as e:
             logger.debug(f"读取文件失败 {file_path}: {e}")
 
         return results

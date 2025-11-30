@@ -3,7 +3,6 @@
 """
 import os
 import re
-from typing import Tuple
 
 
 class SecurityError(Exception):
@@ -35,7 +34,7 @@ class PathSandbox:
         Returns:
             清理后的安全用户ID
         """
-        return re.sub(r'[^a-zA-Z0-9_-]', '_', str(user_id))
+        return re.sub(r"[^a-zA-Z0-9_-]", "_", str(user_id))
 
     def get_user_workspace(self, user_id: str) -> str:
         """
@@ -51,13 +50,13 @@ class PathSandbox:
         user_dir = os.path.join(self.workspaces_dir, safe_user_id)
 
         # 创建用户目录及子目录
-        subdirs = ['documents', 'images', 'outputs', 'temp', 'uploads']
+        subdirs = ["documents", "images", "outputs", "temp", "uploads"]
         for subdir in subdirs:
             os.makedirs(os.path.join(user_dir, subdir), exist_ok=True)
 
         return os.path.abspath(user_dir)
 
-    def validate_path(self, path: str, user_workspace: str) -> Tuple[bool, str]:
+    def validate_path(self, path: str, user_workspace: str) -> tuple[bool, str]:
         """
         验证路径是否在用户工作区内
 

@@ -1,8 +1,6 @@
 """
 错误处理器 - 错误分类、重试机制、用户友好消息
 """
-from typing import Tuple, Optional
-
 
 # 用户友好的错误消息（简洁无技术细节）
 ERROR_MESSAGES = {
@@ -61,7 +59,7 @@ class ErrorHandler:
         error: Exception,
         task_id: str,
         max_retries: int = None
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         判断是否应该重试
 

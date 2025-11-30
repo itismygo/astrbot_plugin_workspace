@@ -1,10 +1,9 @@
 """
 用户存储配额管理器
 """
-import os
 import json
 import logging
-from typing import Tuple, Dict
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -28,24 +27,24 @@ class QuotaManager:
         os.makedirs(os.path.dirname(self.quotas_file), exist_ok=True)
 
         # 加载配额数据
-        self.quotas: Dict[str, dict] = self._load_quotas()
+        self.quotas: dict[str, dict] = self._load_quotas()
 
-    def _load_quotas(self) -> Dict[str, dict]:
+    def _load_quotas(self) -> dict[str, dict]:
         """加载配额数据"""
         if os.path.exists(self.quotas_file):
             try:
-                with open(self.quotas_file, 'r', encoding='utf-8') as f:
+                with open(self.quotas_file, encoding="utf-8") as f:
                     return json.load(f)
-            except (IOError, json.JSONDecodeError, OSError) as e:
+            except (json.JSONDecodeError, OSError) as e:
                 logger.warning(f"加载配额数据失败: {e}")
         return {}
 
     def _save_quotas(self) -> None:
         """保存配额数据"""
         try:
-            with open(self.quotas_file, 'w', encoding='utf-8') as f:
+            with open(self.quotas_file, "w", encoding="utf-8") as f:
                 json.dump(self.quotas, f, indent=2, ensure_ascii=False)
-        except (IOError, OSError) as e:
+        except OSError as e:
             logger.warning(f"保存配额数据失败: {e}")
 
     def get_user_usage(self, user_id: str, user_workspace: str) -> int:
@@ -66,12 +65,12 @@ class QuotaManager:
                     filepath = os.path.join(dirpath, filename)
                     try:
                         total_size += os.path.getsize(filepath)
-                    except (OSError, IOError):
+                    except OSError:
                         # 文件可能被删除或无权限访问，跳过
                         pass
         return total_size
 
-    def check_quota(self, user_id: str, user_workspace: str, additional_bytes: int = 0) -> Tuple[bool, str]:
+    def check_quota(self, user_id: str, user_workspace: str, additional_bytes: int = 0) -> tuple[bool, str]:
         """
         检查用户是否有足够的配额
 

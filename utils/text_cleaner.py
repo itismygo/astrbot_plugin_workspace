@@ -26,40 +26,40 @@ def clean_markdown(text: str) -> str:
         return text
 
     # 移除代码块 ```...```
-    text = re.sub(r'```[\s\S]*?```', lambda m: m.group(0).replace('```', '').strip(), text)
+    text = re.sub(r"```[\s\S]*?```", lambda m: m.group(0).replace("```", "").strip(), text)
 
     # 移除行内代码 `code`
-    text = re.sub(r'`([^`]+)`', r'\1', text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
 
     # 移除粗体 **text** 或 __text__
-    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
-    text = re.sub(r'__([^_]+)__', r'\1', text)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"__([^_]+)__", r"\1", text)
 
     # 移除斜体 *text* 或 _text_（注意不要误删单独的下划线）
-    text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'\1', text)
-    text = re.sub(r'(?<!_)_([^_\s][^_]*)_(?!_)', r'\1', text)
+    text = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", text)
+    text = re.sub(r"(?<!_)_([^_\s][^_]*)_(?!_)", r"\1", text)
 
     # 移除标题 # ## ### 等
-    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
 
     # 移除列表标记 - * + 和数字列表
-    text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
 
     # 移除链接 [text](url) -> text
-    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
 
     # 移除图片 ![alt](url)
-    text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
 
     # 移除引用 >
-    text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)
+    text = re.sub(r"^>\s*", "", text, flags=re.MULTILINE)
 
     # 移除水平线 --- *** ___
-    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r"^[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
 
     # 移除多余的空行
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()
 
@@ -85,7 +85,7 @@ def clean_response(text: str) -> str:
     text = clean_markdown(text)
 
     # 移除行首行尾空白
-    lines = [line.strip() for line in text.split('\n')]
+    lines = [line.strip() for line in text.split("\n")]
 
     # 移除空行但保留段落分隔
     result = []
@@ -93,13 +93,13 @@ def clean_response(text: str) -> str:
     for line in lines:
         if not line:
             if not prev_empty:
-                result.append('')
+                result.append("")
                 prev_empty = True
         else:
             result.append(line)
             prev_empty = False
 
-    return '\n'.join(result).strip()
+    return "\n".join(result).strip()
 
 
 def truncate_text(text: str, max_length: int = 500, suffix: str = "...") -> str:

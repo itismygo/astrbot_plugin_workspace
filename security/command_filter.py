@@ -3,14 +3,13 @@
 """
 import re
 import shlex
-from typing import Tuple, Dict, List, Set
 
 
 class CommandFilter:
     """命令安全过滤器"""
 
     # 允许执行的命令白名单
-    COMMAND_WHITELIST: Dict[str, dict] = {
+    COMMAND_WHITELIST: dict[str, dict] = {
         # 文档转换
         "pandoc": {
             "description": "文档格式转换",
@@ -126,7 +125,7 @@ class CommandFilter:
     }
 
     # 绝对禁止的命令黑名单
-    COMMAND_BLACKLIST: List[str] = [
+    COMMAND_BLACKLIST: list[str] = [
         # 系统危险命令
         "sudo", "su", "chmod", "chown", "chgrp", "chroot",
         "rm", "rmdir", "mkfs", "dd", "fdisk", "mount", "umount",
@@ -161,23 +160,23 @@ class CommandFilter:
     ]
 
     # 危险字符模式（注意：ffmpeg 的 filter_complex 中使用 | 作为分隔符，需要特殊处理）
-    DANGEROUS_PATTERNS: List[str] = [
+    DANGEROUS_PATTERNS: list[str] = [
         r'(?<!")\|(?!")',  # 管道（但排除引号内的）- 简化为不检测，由其他机制保护
-        r';',              # 命令分隔
-        r'&&',             # 逻辑与
-        r'\|\|',           # 逻辑或
-        r'\$\(',           # 命令替换
-        r'`',              # 反引号命令替换
-        r'\$\{',           # 变量展开
-        r'\$[A-Za-z_]',    # 环境变量
-        r'>\s*>',          # 追加重定向
-        r'<\s*<',          # Here document
-        r'&\s*$',          # 后台执行
-        r'^~',             # 用户目录
+        r";",              # 命令分隔
+        r"&&",             # 逻辑与
+        r"\|\|",           # 逻辑或
+        r"\$\(",           # 命令替换
+        r"`",              # 反引号命令替换
+        r"\$\{",           # 变量展开
+        r"\$[A-Za-z_]",    # 环境变量
+        r">\s*>",          # 追加重定向
+        r"<\s*<",          # Here document
+        r"&\s*$",          # 后台执行
+        r"^~",             # 用户目录
     ]
 
     # 允许包含管道符的命令（如 ffmpeg 的 filter_complex）
-    PIPE_ALLOWED_COMMANDS: List[str] = ["ffmpeg", "ffprobe"]
+    PIPE_ALLOWED_COMMANDS: list[str] = ["ffmpeg", "ffprobe"]
 
     def __init__(self, config: dict):
         """
@@ -191,11 +190,11 @@ class CommandFilter:
 
         # 解析额外的白名单命令
         extra_cmds = config.get("extra_whitelist_commands", "")
-        self.extra_whitelist: Set[str] = set(
+        self.extra_whitelist: set[str] = set(
             c.strip() for c in extra_cmds.split(",") if c.strip()
         )
 
-    def validate_command(self, command: str, user_workspace: str) -> Tuple[bool, str]:
+    def validate_command(self, command: str, user_workspace: str) -> tuple[bool, str]:
         """
         验证命令是否安全
 
@@ -214,16 +213,16 @@ class CommandFilter:
         # 0. 先获取基础命令名（用于判断是否跳过某些检测）
         try:
             first_part = shlex.split(command)[0] if command else ""
-        except:
+        except ValueError:
             first_part = command.split()[0] if command.split() else ""
 
         # 1. 检查危险模式（对某些命令跳过管道符检测）
         for pattern in self.DANGEROUS_PATTERNS:
             # 对 ffmpeg 等命令跳过管道符检测（filter_complex 需要用 | 分隔）
-            if pattern in [r'(?<!")\|(?!")', r'\|'] and first_part in self.PIPE_ALLOWED_COMMANDS:
+            if pattern in [r'(?<!")\|(?!")', r"\|"] and first_part in self.PIPE_ALLOWED_COMMANDS:
                 continue
             if re.search(pattern, command):
-                return False, f"检测到危险模式，命令被拒绝"
+                return False, "检测到危险模式，命令被拒绝"
 
         # 2. 解析命令
         try:
@@ -251,18 +250,18 @@ class CommandFilter:
 
             for arg in cmd_parts[1:]:
                 # 分离参数名和值（处理 --arg=value 格式）
-                if '=' in arg:
-                    param_name = arg.split('=')[0]
+                if "=" in arg:
+                    param_name = arg.split("=")[0]
                 else:
                     param_name = arg
 
                 # 精确匹配检查，避免误匹配
                 for blocked in blocked_args:
                     # 完全匹配或以 blocked= 开头
-                    if param_name == blocked or param_name.startswith(blocked + '='):
+                    if param_name == blocked or param_name.startswith(blocked + "="):
                         return False, f"参数 '{param_name}' 被禁止使用"
                     # 对于特殊协议前缀（如 ephemeral:, msl:）检查是否包含
-                    if ':' in blocked and blocked in arg:
+                    if ":" in blocked and blocked in arg:
                         return False, f"参数 '{arg}' 包含被禁止的内容"
 
         return True, "OK"
@@ -284,12 +283,12 @@ class CommandFilter:
             if base_cmd in self.COMMAND_WHITELIST:
                 config = self.COMMAND_WHITELIST[base_cmd]
                 return config.get("max_timeout", self.command_timeout)
-        except:
+        except (ValueError, IndexError):
             pass
 
         return self.command_timeout
 
-    def get_allowed_commands(self) -> List[str]:
+    def get_allowed_commands(self) -> list[str]:
         """获取所有允许的命令列表"""
         commands = list(self.COMMAND_WHITELIST.keys())
         commands.extend(self.extra_whitelist)

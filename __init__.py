@@ -3,4 +3,4 @@
 
 from .main import WorkspacePlugin
 
-__all__ = ['WorkspacePlugin']
+__all__ = ["WorkspacePlugin"]

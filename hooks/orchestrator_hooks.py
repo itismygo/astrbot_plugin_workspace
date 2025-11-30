@@ -1,18 +1,17 @@
 """
 Orchestrator 钩子 - 信息过滤和错误处理
 """
-from typing import TYPE_CHECKING, Optional, Any
-
-from mcp.types import CallToolResult
+from typing import TYPE_CHECKING, Any
 
 from astrbot.core.agent.hooks import BaseAgentRunHooks
 from astrbot.core.agent.run_context import ContextWrapper
+from astrbot.core.agent.tool import FunctionTool
 from astrbot.core.astr_agent_context import AstrAgentContext
 from astrbot.core.provider.entities import LLMResponse
-from astrbot.core.agent.tool import FunctionTool
+from mcp.types import CallToolResult
 
-from ..utils.text_cleaner import clean_response
 from ..errors.handler import ErrorHandler
+from ..utils.text_cleaner import clean_response
 
 if TYPE_CHECKING:
     from ..main import WorkspacePlugin
@@ -57,7 +56,7 @@ class OrchestratorHooks(BaseAgentRunHooks[AstrAgentContext]):
     ):
         """工具调用前调用"""
         # 检测是否进入子 Agent
-        if hasattr(tool, 'name') and tool.name.startswith("transfer_to_"):
+        if hasattr(tool, "name") and tool.name.startswith("transfer_to_"):
             self.in_sub_agent = True
             # 可以在这里阻止中间消息发送
             # 但 AstrBot 的实现可能不支持直接阻止
@@ -70,7 +69,7 @@ class OrchestratorHooks(BaseAgentRunHooks[AstrAgentContext]):
         tool_result: CallToolResult | None,
     ):
         """工具调用后调用"""
-        if hasattr(tool, 'name') and tool.name.startswith("transfer_to_"):
+        if hasattr(tool, "name") and tool.name.startswith("transfer_to_"):
             self.in_sub_agent = False
             # 收集子 Agent 结果
             if tool_result:

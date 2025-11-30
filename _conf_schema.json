@@ -53,5 +53,83 @@
     "description": "子Agent使用的模型提供商ID（留空则使用当前会话的提供商）。注意：当前AstrBot版本暂不支持此功能，子Agent会继承主Agent的提供商。",
     "type": "string",
     "default": ""
+  },
+  "enable_code_analyzer": {
+    "description": "启用代码分析代理（分析代码结构、生成文档）",
+    "type": "bool",
+    "default": true
+  },
+  "enable_task_planner": {
+    "description": "启用任务规划代理（复杂任务拆解和项目规划）",
+    "type": "bool",
+    "default": true
+  },
+  "code_analyzer_provider_id": {
+    "description": "代码分析代理使用的模型提供商（留空则使用当前会话的提供商）",
+    "type": "string",
+    "default": "",
+    "_special": "select_provider"
+  },
+  "task_planner_provider_id": {
+    "description": "任务规划代理使用的模型提供商（留空则使用当前会话的提供商）",
+    "type": "string",
+    "default": "",
+    "_special": "select_provider"
+  },
+  "enable_fact_checker": {
+    "description": "启用新闻验证代理（验证新闻真实性、评估来源可信度）",
+    "type": "bool",
+    "default": true
+  },
+  "fact_checker_provider_id": {
+    "description": "新闻验证代理使用的模型提供商（留空则使用当前会话的提供商）",
+    "type": "string",
+    "default": "",
+    "_special": "select_provider"
+  },
+  "enable_screenshots": {
+    "description": "启用网页截图功能（需要安装 Playwright）",
+    "type": "bool",
+    "default": true
+  },
+  "max_screenshots": {
+    "description": "单次验证最大截图数量",
+    "type": "int",
+    "default": 3
+  },
+  "screenshot_timeout": {
+    "description": "截图超时时间（秒）",
+    "type": "int",
+    "default": 30
+  },
+  "urlscan_api_key": {
+    "description": "urlscan.io API Key（截图备用方案，可选）",
+    "type": "string",
+    "default": ""
+  },
+  "max_search_results": {
+    "description": "新闻验证时最大搜索结果数量",
+    "type": "int",
+    "default": 10
+  },
+  "enable_dynamic_check": {
+    "description": "启用动态可信度检查（HTTPS、域名年龄、ICP备案）",
+    "type": "bool",
+    "default": true
+  },
+  "source_weight": {
+    "description": "来源可信度权重（0-1）",
+    "type": "float",
+    "default": 0.4
+  },
+  "consistency_weight": {
+    "description": "一致性评分权重（0-1）",
+    "type": "float",
+    "default": 0.4
+  },
+  "language_weight": {
+    "description": "语言客观性权重（0-1）",
+    "type": "float",
+    "default": 0.2
   }
 }
