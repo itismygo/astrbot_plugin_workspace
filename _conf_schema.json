@@ -1,0 +1,57 @@
+{
+  "enable_whitelist": {
+    "description": "启用白名单限制（仅白名单用户可使用）",
+    "type": "bool",
+    "default": true
+  },
+  "whitelist_users": {
+    "description": "允许使用的用户ID列表（逗号分隔）",
+    "type": "string",
+    "default": ""
+  },
+  "admin_users": {
+    "description": "管理员用户ID列表（逗号分隔，拥有完整权限）",
+    "type": "string",
+    "default": ""
+  },
+  "user_quota_mb": {
+    "description": "每用户存储配额（MB）",
+    "type": "int",
+    "default": 100
+  },
+  "max_send_file_size_mb": {
+    "description": "最大发送文件大小（MB）",
+    "type": "int",
+    "default": 50
+  },
+  "max_read_lines": {
+    "description": "单次读取文件最大行数",
+    "type": "int",
+    "default": 500
+  },
+  "command_timeout": {
+    "description": "命令执行超时（秒）",
+    "type": "int",
+    "default": 60
+  },
+  "extra_whitelist_commands": {
+    "description": "额外允许的命令（逗号分隔）",
+    "type": "string",
+    "default": ""
+  },
+  "auto_save_uploaded_files": {
+    "description": "自动保存用户上传的文件到工作区",
+    "type": "bool",
+    "default": true
+  },
+  "enable_multi_agent": {
+    "description": "启用多Agent模式（注册HandoffTool，让LLM可以调用子Agent）",
+    "type": "bool",
+    "default": false
+  },
+  "sub_agent_provider_id": {
+    "description": "子Agent使用的模型提供商ID（留空则使用当前会话的提供商）。注意：当前AstrBot版本暂不支持此功能，子Agent会继承主Agent的提供商。",
+    "type": "string",
+    "default": ""
+  }
+}
