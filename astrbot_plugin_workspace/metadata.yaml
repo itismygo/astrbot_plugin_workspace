@@ -1,5 +1,0 @@
-name: astrbot_plugin_workspace
-description: 安全工作区插件 - 提供文件操作、安全命令执行等 Agent 能力
-author: AstrBot
-version: 1.0.0
-repo: ""
