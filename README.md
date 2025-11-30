@@ -112,9 +112,11 @@ user_workspaces/
 
 | 工具名 | 功能 | 参数 |
 |--------|------|------|
-| execute_command | 执行白名单命令 | command, timeout |
-| convert_pdf | PDF 转文本/MD/HTML | input_path, output_format |
+| convert_md_to_pdf | Markdown 转 PDF（中文支持）⭐ | input_path, output_name |
 | convert_office | Office 文档转换 | input_path, output_format |
+| convert_pdf | PDF 转文本/MD/HTML | input_path, output_format |
+| execute_command | 执行白名单命令 | command, timeout |
+| render_markdown | 渲染 Markdown 为图片发送 | content, title, send_pdf |
 
 ### 搜索和总结工具
 
@@ -130,7 +132,7 @@ user_workspaces/
 |--------|------|------|
 | extract_facts | 提取可验证事实点 | text, min_verifiability |
 | evaluate_sources | 评估来源可信度 | search_results, claim |
-| verify_news | 完整新闻验证 | news_text, search_results, generate_report, take_screenshots |
+| verify_news | 完整新闻验证 | news_text, search_results, generate_report |
 | get_verification_plan | 获取验证计划 | news_text |
 
 ### 多 Agent 工具
@@ -141,103 +143,120 @@ user_workspaces/
 
 ## 安装
 
-### Python 依赖
+### Docker Compose 部署（推荐）
+
+如果你使用 docker-compose 部署 AstrBot（容器名为 `astrbot`）：
+
+#### 一键安装所有依赖
 
 ```bash
-pip install aiohttp playwright weasyprint
-playwright install chromium
-```
-
-### Docker 环境安装
-
-#### 必需依赖
-
-```bash
-# 进入容器
-docker exec -it astrbot bash
-
-# 更新源（使用清华镜像）
-sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources
-apt update
-
-# 安装基础工具
-apt install -y \
-    poppler-utils \
-    imagemagick \
-    ffmpeg \
-    zip unzip \
-    file
-```
-
-#### 文档转换工具
-
-```bash
-# Pandoc - 文档格式转换
-apt install -y pandoc
-
-# LibreOffice - Office 文档转换（推荐，中文支持好）
-apt install -y libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui
-```
-
-#### 中文字体支持
-
-```bash
-# 安装中文字体（PDF 生成必需）
-apt install -y fonts-noto-cjk fonts-wqy-microhei fonts-wqy-zenhei
-
-# 刷新字体缓存
-fc-cache -fv
-```
-
-#### PDF 报告生成依赖
-
-```bash
-# WeasyPrint 依赖（用于生成验证报告 PDF）
-apt install -y \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libgdk-pixbuf2.0-0 \
-    libffi-dev \
-    shared-mime-info
-
-pip install weasyprint
-```
-
-#### 网页截图依赖
-
-```bash
-# Playwright 浏览器
-pip install playwright
-playwright install chromium
-playwright install-deps chromium
-```
-
-#### 一键安装脚本
-
-```bash
-docker exec -it astrbot bash -c "
-sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources && \
-apt update && \
-apt install -y \
-    poppler-utils \
-    imagemagick \
-    ffmpeg \
-    zip unzip \
-    file \
-    pandoc \
-    libreoffice-writer-nogui \
-    libreoffice-calc-nogui \
-    libreoffice-impress-nogui \
+docker exec -it astrbot bash -c "apt-get update && apt-get install -y \
+    texlive-xetex \
+    texlive-latex-extra \
+    texlive-science \
+    texlive-fonts-recommended \
     fonts-noto-cjk \
-    fonts-wqy-microhei \
+    pandoc \
+    ffmpeg \
+    imagemagick \
+    poppler-utils \
+    libreoffice \
+    zip unzip \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libgdk-pixbuf2.0-0 && \
 fc-cache -fv && \
 pip install aiohttp playwright weasyprint && \
-playwright install chromium && \
-playwright install-deps chromium
-"
+playwright install chromium --with-deps"
+```
+
+安装完成后重启容器：
+
+```bash
+docker-compose restart astrbot
+```
+
+#### 分步安装（如需排查问题）
+
+```bash
+# 1. 进入容器
+docker exec -it astrbot /bin/bash
+
+# 2. 安装 Playwright 浏览器（用于 render_markdown）
+playwright install chromium --with-deps
+
+# 3. 安装 LaTeX 完整数学支持（用于 convert_md_to_pdf）
+apt-get update && apt-get install -y \
+    texlive-xetex \
+    texlive-latex-extra \
+    texlive-science \
+    texlive-fonts-recommended \
+    fonts-noto-cjk
+
+# 4. 安装其他工具
+apt-get install -y \
+    pandoc \
+    ffmpeg \
+    imagemagick \
+    poppler-utils \
+    libreoffice \
+    zip unzip
+
+# 5. 刷新字体缓存
+fc-cache -fv
+
+# 6. 退出容器
+exit
+
+# 7. 重启容器
+docker-compose restart astrbot
+```
+
+### 依赖说明
+
+| 依赖 | 用途 | 对应工具 |
+|------|------|----------|
+| texlive-xetex | LaTeX 中文 PDF | convert_md_to_pdf |
+| texlive-science | 数学公式支持 | convert_md_to_pdf |
+| fonts-noto-cjk | 中文字体 | 所有中文输出 |
+| playwright + chromium | 网页渲染 | render_markdown |
+| pandoc | 文档格式转换 | execute_command |
+| ffmpeg | 音视频处理 | execute_command |
+| imagemagick | 图片处理 | execute_command |
+| poppler-utils | PDF 处理 | convert_pdf |
+| libreoffice | Office 转换 | convert_office |
+
+### 最小安装（仅基础功能）
+
+如果只需要基础文件操作，不需要 PDF 生成：
+
+```bash
+docker exec -it astrbot bash -c "apt-get update && apt-get install -y \
+    fonts-noto-cjk \
+    pandoc \
+    ffmpeg \
+    poppler-utils && \
+pip install aiohttp playwright && \
+playwright install chromium --with-deps"
+```
+
+### 验证安装
+
+```bash
+# 进入容器检查
+docker exec -it astrbot bash
+
+# 检查 xelatex
+xelatex --version
+
+# 检查 pandoc
+pandoc --version
+
+# 检查中文字体
+fc-list :lang=zh
+
+# 检查 playwright
+playwright --version
 ```
 
 ## 新闻验证功能详解
@@ -510,6 +529,15 @@ plugins:
 MIT License
 
 ## 更新日志
+
+### v2.2.0
+- 新增 `convert_md_to_pdf` 工具，完美支持中文和数学公式
+- 新增 `render_markdown` 工具，直接渲染 Markdown 为图片发送
+- 新增中文 LaTeX 模板（templates/chinese.latex）
+- 增强数学公式支持：physics、tensor、esint 等专业包
+- 优化提示词，添加工具选择决策表
+- 优化 Markdown 渲染器超时和分辨率配置
+- 新增 TOOLS_GUIDE.md 工具指南文档
 
 ### v2.1.0
 - 新增新闻验证功能

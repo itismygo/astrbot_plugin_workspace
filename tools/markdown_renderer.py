@@ -19,8 +19,10 @@ class MarkdownRenderer:
     def __init__(self, plugin: "WorkspacePlugin"):
         self.plugin = plugin
         self.config = plugin.config
-        self.max_width = self.config.get("render_max_width", 800)
+        self.max_width = self.config.get("render_max_width", 1200)  # 默认宽度提高到1200
         self.padding = self.config.get("render_padding", 40)
+        self.page_timeout = self.config.get("render_page_timeout", 60000)  # 页面超时60秒
+        self.mathjax_timeout = self.config.get("render_mathjax_timeout", 15000)  # MathJax超时15秒
 
     async def render_to_image(
         self,
@@ -53,11 +55,21 @@ class MarkdownRenderer:
                 browser = await p.chromium.launch(headless=True)
                 page = await browser.new_page()
 
-                # 设置页面内容
-                await page.set_content(html_content)
+                # 设置页面内容（使用配置的超时时间）
+                await page.set_content(html_content, timeout=self.page_timeout)
 
                 # 等待渲染完成
-                await page.wait_for_load_state("networkidle")
+                await page.wait_for_load_state("networkidle", timeout=self.page_timeout)
+
+                # 等待 MathJax 渲染完成（如果有公式）
+                try:
+                    await page.wait_for_function(
+                        "typeof MathJax === 'undefined' || (MathJax.startup && MathJax.startup.promise)",
+                        timeout=self.mathjax_timeout
+                    )
+                    await page.wait_for_timeout(1000)  # 额外等待确保渲染完成
+                except Exception:
+                    pass  # MathJax 可能未加载（无公式时）
 
                 # 获取内容高度
                 content_height = await page.evaluate(
@@ -88,7 +100,7 @@ class MarkdownRenderer:
             return None, str(e)
 
     def _markdown_to_html(self, markdown_text: str, title: str = "") -> str:
-        """将 Markdown 转换为带样式的 HTML"""
+        """将 Markdown 转换为带样式的 HTML（支持 MathJax 数学公式）"""
         try:
             import markdown
             html_body = markdown.markdown(
@@ -106,6 +118,19 @@ class MarkdownRenderer:
 <html>
 <head>
     <meta charset="utf-8">
+    <!-- MathJax 配置 -->
+    <script>
+    MathJax = {{
+        tex: {{
+            inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+            displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']]
+        }},
+        svg: {{
+            fontCache: 'global'
+        }}
+    }};
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
     <style>
         * {{
             margin: 0;
@@ -245,3 +270,63 @@ class MarkdownRenderer:
         )
 
         return text
+
+    async def render_to_pdf(
+        self,
+        markdown_text: str,
+        workspace: str,
+        title: str = ""
+    ) -> tuple[str | None, str | None]:
+        """
+        将 Markdown 渲染为 PDF
+
+        Args:
+            markdown_text: Markdown 文本
+            workspace: 工作区路径
+            title: 可选标题
+
+        Returns:
+            (pdf_path, error_message)
+        """
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            return None, "Playwright 未安装，请运行: pip install playwright && playwright install chromium"
+
+        try:
+            # 转换 Markdown 为 HTML
+            html_content = self._markdown_to_html(markdown_text, title)
+
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+                await page.set_content(html_content, timeout=self.page_timeout)
+
+                # 等待渲染完成
+                await page.wait_for_load_state("networkidle", timeout=self.page_timeout)
+
+                # 等待 MathJax 渲染完成
+                try:
+                    await page.wait_for_function(
+                        "typeof MathJax === 'undefined' || (MathJax.startup && MathJax.startup.promise)",
+                        timeout=self.mathjax_timeout
+                    )
+                    await page.wait_for_timeout(1000)
+                except Exception:
+                    pass
+
+                # 生成 PDF
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_dir = os.path.join(workspace, "outputs", "renders")
+                os.makedirs(output_dir, exist_ok=True)
+                pdf_path = os.path.join(output_dir, f"render_{timestamp}.pdf")
+
+                await page.pdf(path=pdf_path, format="A4", print_background=True)
+                await browser.close()
+
+                logger.info(f"PDF 渲染成功: {pdf_path}")
+                return pdf_path, None
+
+        except Exception as e:
+            logger.error(f"PDF 渲染失败: {e}")
+            return None, str(e)

@@ -1189,6 +1189,111 @@ class WorkspacePlugin(Star):
         except Exception as e:
             logger.error(f"保存上传媒体失败: {str(e)}")
 
+    # ==================== Markdown 转 PDF 工具（中文支持）====================
+
+    @filter.llm_tool(name="convert_md_to_pdf")
+    async def convert_md_to_pdf(
+        self,
+        event: AstrMessageEvent,
+        input_path: str,
+        output_name: str = ""
+    ) -> str:
+        """
+        将 Markdown 文件转换为 PDF，完美支持中文和数学公式。推荐用于生成中文文档。
+
+        使用场景：
+        - 将 Markdown 文档转换为 PDF（中文支持良好）
+        - 生成包含数学公式的技术文档
+        - 创建格式美观的中文报告
+
+        注意事项：
+        - 自动使用中文 LaTeX 模板，无需手动指定
+        - 支持 LaTeX 数学公式
+        - 输出文件保存到 outputs/ 目录
+        - 转换成功后请使用 send_file 发送给用户
+
+        Args:
+            input_path (str): Markdown 文件路径（相对于工作区），如 "outputs/report.md"
+            output_name (str): 输出 PDF 文件名（可选），不指定则使用原文件名
+
+        Returns:
+            转换结果
+
+        回复要求：不使用markdown格式 不使用星号或特殊符号 简洁直接回复
+        """
+        allowed, msg = self._check_permission(event)
+        if not allowed:
+            return f"权限不足: {msg}"
+
+        workspace = self._get_user_workspace(event)
+
+        try:
+            safe_input = self.sandbox.resolve_path(input_path, workspace)
+
+            if not os.path.exists(safe_input):
+                return f"文件不存在: {input_path}"
+
+            # 获取插件目录中的中文模板路径
+            plugin_dir = os.path.dirname(os.path.abspath(__file__))
+            template_path = os.path.join(plugin_dir, "templates", "chinese.latex")
+
+            if not os.path.exists(template_path):
+                return "中文模板文件不存在，请检查插件安装"
+
+            # 准备输出路径
+            base_name = os.path.splitext(os.path.basename(input_path))[0]
+            # 处理时间戳前缀
+            if "_" in base_name and base_name.split("_")[0].isdigit():
+                parts = base_name.split("_", 2)
+                if len(parts) >= 3:
+                    base_name = parts[2]
+
+            output_name = output_name or f"{base_name}.pdf"
+            if not output_name.endswith(".pdf"):
+                output_name += ".pdf"
+
+            output_dir = os.path.join(workspace, "outputs")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, output_name)
+
+            # 使用 pandoc 转换，指定中文模板
+            process = await asyncio.create_subprocess_exec(
+                "pandoc",
+                safe_input,
+                "-o", output_path,
+                "--pdf-engine=xelatex",
+                f"--template={template_path}",
+                "-V", "geometry:margin=2.5cm",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=workspace
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=180
+            )
+
+            if process.returncode != 0:
+                error = stderr.decode("utf-8", errors="replace")
+                # 简化错误信息
+                if "xelatex" in error.lower():
+                    return "转换失败: xelatex 未安装，请安装 texlive-xetex"
+                return f"转换失败: {error[:200]}"
+
+            if os.path.exists(output_path):
+                file_size = os.path.getsize(output_path)
+                return f"转换成功: outputs/{output_name} ({self._format_size(file_size)})"
+            else:
+                return "转换完成但未找到输出文件"
+
+        except asyncio.TimeoutError:
+            return "转换超时，请尝试较小的文件"
+        except FileNotFoundError:
+            return "pandoc 未安装，无法执行转换"
+        except Exception as e:
+            return f"转换失败: {str(e)[:100]}"
+
     # ==================== 新增工具：批量总结和搜索 ====================
 
     @filter.llm_tool(name="summarize_batch")
@@ -1487,26 +1592,16 @@ class WorkspacePlugin(Star):
         """
         完整的新闻验证流程。综合评估新闻真实性并生成验证报告。
 
-        使用场景：
-        - 用户提供新闻文本和搜索结果，需要完整验证
-        - 生成新闻可信度评分和验证结论
-        - 生成PDF验证报告
-
-        验证结论类型：
-        - 真实: 综合评分>=80，多个权威来源证实
-        - 部分真实: 综合评分60-79，部分内容可证实
-        - 无法验证: 综合评分40-59，缺乏足够证据
-        - 可能虚假: 综合评分<40，与权威来源矛盾
-
         Args:
             news_text (str): 新闻文本内容
             search_results (list): 搜索结果列表
             generate_report (bool): 是否生成PDF报告，默认 True
 
         Returns:
-            验证结论和报告路径
+            极简验证结论
 
-        回复要求：不使用markdown格式 不使用星号或特殊符号 简洁直接回复
+        重要：此工具返回后你只需用send_file发送报告 不要再输出任何总结或分析
+        回复要求：只说一句话告知用户结论和报告已发送 不使用markdown 不使用表格 不使用列表
         """
         if not self.fact_check_tools:
             return "新闻验证功能未启用"
@@ -1521,23 +1616,15 @@ class WorkspacePlugin(Star):
                 generate_report=generate_report
             )
 
-            # 格式化输出
-            output = self.fact_check_tools.format_brief_result(result)
+            # 极简返回格式
+            verdict = result.verdict
+            score = result.credibility_score
 
-            # 报告信息
             if result.report_path:
                 rel_path = os.path.relpath(result.report_path, workspace)
-                # 判断报告格式
-                if rel_path.endswith(".pdf"):
-                    output += f"\n\n[报告] PDF报告已生成: {rel_path}"
-                    output += "\n提示: 使用 send_file 工具发送报告给用户"
-                elif rel_path.endswith(".html"):
-                    output += f"\n\n[报告] HTML报告已生成: {rel_path}"
-                    output += "\n提示: 可使用 convert_office 转换为PDF后发送，或直接发送HTML文件"
-                else:
-                    output += f"\n\n[报告] 报告已生成: {rel_path}"
-
-            return output
+                return f"验证完成 结论:{verdict} 可信度:{score:.0f}分 报告:{rel_path} 请立即用send_file发送报告给用户"
+            else:
+                return f"验证完成 结论:{verdict} 可信度:{score:.0f}分"
 
         except Exception as e:
             logger.error(f"新闻验证失败: {e}", exc_info=True)
@@ -1599,49 +1686,86 @@ class WorkspacePlugin(Star):
         self,
         event: AstrMessageEvent,
         content: str,
-        title: str = ""
+        title: str = "",
+        send_pdf: bool = True,
+        auto_cleanup: bool = True
     ) -> str:
         """
-        将 Markdown 格式的文本渲染为图片发送给用户。当回复内容包含复杂格式（表格、代码块、列表等）时使用此工具。
+        将 Markdown 格式的回复渲染为图片和PDF发送给用户。支持数学公式（LaTeX语法）。
+
+        重要规则：
+        - 当你需要使用 Markdown 格式回复时，必须使用此工具
+        - 不要直接输出 Markdown 文本，而是调用此工具渲染后发送
+        - 支持 LaTeX 数学公式：行内 $公式$ 或独立 $$公式$$
+        - 图片和PDF发送成功后会自动清理临时文件
 
         使用场景：
-        - 回复包含表格、代码块等复杂格式
-        - 需要更好的排版展示效果
-        - 长文本回复需要更好的阅读体验
-
-        注意事项：
-        - 仅用于格式化展示，不要用于普通文本回复
-        - 内容应为有效的 Markdown 格式
-        - 图片会自动发送给用户
+        - 回复包含表格、代码块、列表等复杂格式
+        - 回复包含数学公式
+        - 搜索结果需要结构化展示
+        - 任何需要 Markdown 格式的回复
 
         Args:
-            content (str): Markdown 格式的文本内容
-            title (str): 可选的标题，显示在内容顶部
+            content (str): Markdown 格式的文本内容（支持 LaTeX 公式）
+            title (str): 可选的标题
+            send_pdf (bool): 是否同时发送 PDF 文件，默认 True
+            auto_cleanup (bool): 发送后是否自动删除临时文件，默认 True
 
         Returns:
-            渲染结果
+            发送结果
 
-        回复要求：不使用markdown格式 不使用星号或特殊符号 简洁直接回复
+        回复要求：调用此工具后只需简短确认已发送，不要再输出任何内容
         """
         workspace = self._get_user_workspace(event)
+        files_to_cleanup = []
 
+        # 1. 渲染图片
         image_path, error = await self.markdown_renderer.render_to_image(
             markdown_text=content,
             workspace=workspace,
             title=title
         )
 
-        if image_path:
-            try:
-                umo = event.unified_msg_origin
-                chain = [Comp.Image.fromFileSystem(image_path)]
-                await self.context.send_message(umo, MessageChain(chain))
-                return "内容已渲染为图片并发送"
-            except Exception as e:
-                logger.error(f"发送渲染图片失败: {e}")
-                return f"渲染成功但发送失败: {str(e)}"
-        else:
+        if not image_path:
             return f"渲染失败: {error}"
+
+        files_to_cleanup.append(image_path)
+
+        # 2. 发送图片
+        try:
+            umo = event.unified_msg_origin
+            chain = [Comp.Image.fromFileSystem(image_path)]
+            await self.context.send_message(umo, MessageChain(chain))
+        except Exception as e:
+            logger.error(f"发送渲染图片失败: {e}")
+            return f"发送图片失败: {str(e)}"
+
+        # 3. 渲染并发送 PDF（可选）
+        if send_pdf:
+            pdf_path, pdf_error = await self.markdown_renderer.render_to_pdf(
+                markdown_text=content,
+                workspace=workspace,
+                title=title
+            )
+            if pdf_path:
+                files_to_cleanup.append(pdf_path)
+                try:
+                    pdf_name = os.path.basename(pdf_path)
+                    chain = [Comp.File(file=pdf_path, name=pdf_name)]
+                    await self.context.send_message(umo, MessageChain(chain))
+                except Exception as e:
+                    logger.warning(f"发送PDF失败: {e}")
+
+        # 4. 清理临时文件
+        if auto_cleanup:
+            for file_path in files_to_cleanup:
+                try:
+                    os.remove(file_path)
+                    logger.info(f"已清理临时文件: {file_path}")
+                except Exception as e:
+                    logger.warning(f"清理临时文件失败: {e}")
+
+        return "内容已渲染为图片和PDF并发送"
 
     # ==================== Orchestrator 入口（可选） ====================
     #

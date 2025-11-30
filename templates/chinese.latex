@@ -1,0 +1,235 @@
+\documentclass[12pt,a4paper]{article}
+
+% ==================== 中文支持 ====================
+\usepackage{ctex}
+\usepackage{xeCJK}
+
+% 设置中文字体（使用系统自带字体）
+\setCJKmainfont{Noto Sans CJK SC}[
+  BoldFont=Noto Sans CJK SC Bold,
+  ItalicFont=Noto Sans CJK SC,
+  BoldItalicFont=Noto Sans CJK SC Bold
+]
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+% 备用字体设置（如果上面的字体不存在）
+% \setCJKmainfont{WenQuanYi Micro Hei}
+% \setCJKmainfont{Source Han Sans SC}
+
+% ==================== 页面设置 ====================
+\usepackage[top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm]{geometry}
+
+% ==================== 数学公式支持（增强版）====================
+\usepackage{amsmath}      % 基础数学环境
+\usepackage{amssymb}      % 数学符号
+\usepackage{amsfonts}     % 数学字体
+\usepackage{amsthm}       % 定理环境
+\usepackage{mathtools}    % amsmath 增强
+\usepackage{bm}           % 粗体数学符号 \bm{}
+\usepackage{bbm}          % 黑板粗体 \mathbbm{}
+\usepackage{mathrsfs}     % 花体字母 \mathscr{}
+\usepackage{esint}        % 更多积分符号（环路积分等）
+\usepackage{upgreek}      % 直立希腊字母
+\usepackage{siunitx}      % 国际单位制
+\usepackage{physics}      % 物理符号（偏导、狄拉克符号等）
+\usepackage{tensor}       % 张量符号
+\usepackage{cancel}       % 删除线（约分）
+\usepackage{extarrows}    % 更多箭头
+
+% 数学字体设置（确保符号正确显示）
+\usepackage{unicode-math}
+\setmathfont{Latin Modern Math}
+% 备用数学字体
+% \setmathfont{XITS Math}
+% \setmathfont{TeX Gyre Termes Math}
+
+% ==================== 自定义数学命令 ====================
+% 常用集合
+\newcommand{\N}{\mathbb{N}}           % 自然数
+\newcommand{\Z}{\mathbb{Z}}           % 整数
+\newcommand{\Q}{\mathbb{Q}}           % 有理数
+\newcommand{\R}{\mathbb{R}}           % 实数
+\newcommand{\C}{\mathbb{C}}           % 复数
+\newcommand{\F}{\mathbb{F}}           % 域
+
+% 常用运算符
+\DeclareMathOperator{\sgn}{sgn}       % 符号函数
+\DeclareMathOperator{\Tr}{Tr}         % 迹
+\DeclareMathOperator{\diag}{diag}     % 对角
+\DeclareMathOperator{\rank}{rank}     % 秩
+\DeclareMathOperator{\Ker}{Ker}       % 核
+\DeclareMathOperator{\Image}{Im}      % 像
+\DeclareMathOperator{\Span}{span}     % 张成
+\DeclareMathOperator{\supp}{supp}     % 支撑集
+\DeclareMathOperator{\dist}{dist}     % 距离
+\DeclareMathOperator{\diam}{diam}     % 直径
+\DeclareMathOperator{\Res}{Res}       % 留数
+\DeclareMathOperator{\Arg}{Arg}       % 辐角
+\DeclareMathOperator{\Log}{Log}       % 主值对数
+\DeclareMathOperator{\arccot}{arccot} % 反余切
+\DeclareMathOperator{\arcsec}{arcsec} % 反正割
+\DeclareMathOperator{\arccsc}{arccsc} % 反余割
+\DeclareMathOperator{\sech}{sech}     % 双曲正割
+\DeclareMathOperator{\csch}{csch}     % 双曲余割
+\DeclareMathOperator{\erf}{erf}       % 误差函数
+\DeclareMathOperator{\erfc}{erfc}     % 互补误差函数
+
+% 向量和矩阵
+\newcommand{\vect}[1]{\boldsymbol{#1}}    % 向量
+\newcommand{\mat}[1]{\mathbf{#1}}         % 矩阵
+\newcommand{\trans}{^{\mathsf{T}}}        % 转置
+\newcommand{\herm}{^{\mathsf{H}}}         % 共轭转置
+\newcommand{\inv}{^{-1}}                  % 逆
+
+% 微分和导数
+\newcommand{\diff}{\mathop{}\!\mathrm{d}} % 微分算子 d
+\newcommand{\Diff}{\mathop{}\!\mathrm{D}} % 大写微分 D
+\newcommand{\e}{\mathrm{e}}               % 自然常数 e
+\newcommand{\im}{\mathrm{i}}              % 虚数单位 i
+
+% 括号
+\newcommand{\abs}[1]{\left\lvert #1 \right\rvert}       % 绝对值
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}      % 范数
+\newcommand{\inner}[2]{\left\langle #1, #2 \right\rangle} % 内积
+\newcommand{\floor}[1]{\left\lfloor #1 \right\rfloor}   % 下取整
+\newcommand{\ceil}[1]{\left\lceil #1 \right\rceil}      % 上取整
+\newcommand{\set}[1]{\left\{ #1 \right\}}               % 集合
+
+% 概率和统计
+\DeclareMathOperator{\E}{\mathbb{E}}      % 期望
+\DeclareMathOperator{\Var}{Var}           % 方差
+\DeclareMathOperator{\Cov}{Cov}           % 协方差
+\DeclareMathOperator{\Corr}{Corr}         % 相关系数
+\newcommand{\Prob}{\mathbb{P}}            % 概率
+
+% 定理环境
+\theoremstyle{plain}
+\newtheorem{theorem}{定理}[section]
+\newtheorem{lemma}[theorem]{引理}
+\newtheorem{proposition}[theorem]{命题}
+\newtheorem{corollary}[theorem]{推论}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{定义}
+\newtheorem{example}[theorem]{例}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{注}
+
+% ==================== 图片支持 ====================
+\usepackage{graphicx}
+\usepackage{float}        % 图片位置控制
+\usepackage{subfig}       % 子图
+
+% ==================== 表格支持 ====================
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}     % 合并行
+\usepackage{makecell}     % 单元格内换行
+
+% ==================== 代码高亮 ====================
+\usepackage{listings}
+\usepackage{xcolor}
+
+% 代码样式设置
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  keywordstyle=\color{blue},
+  commentstyle=\color{green!60!black},
+  stringstyle=\color{orange},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  tabsize=4,
+  showstringspaces=false,
+  xleftmargin=2em,
+  framexleftmargin=1.5em
+}
+
+% ==================== 超链接 ====================
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue,
+  bookmarks=true,
+  pdfstartview=FitH
+}
+
+% ==================== 段落设置 ====================
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.5em}
+
+% 行距
+\linespread{1.5}
+
+% ==================== 标题样式 ====================
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{1em}{}
+
+% ==================== 页眉页脚 ====================
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\leftmark}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% ==================== Pandoc 兼容 ====================
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+% CSL 引用支持
+\newlength{\cslhangindent}
+\setlength{\cslhangindent}{1.5em}
+\newenvironment{CSLReferences}[2]{}{}
+
+% ==================== 引用块样式 ====================
+\usepackage{framed}
+\usepackage{quoting}
+\definecolor{shadecolor}{RGB}{248,248,248}
+
+% 自定义引用块
+\renewenvironment{quote}{%
+  \begin{shaded}
+  \begin{quoting}[leftmargin=1em, rightmargin=1em]
+}{%
+  \end{quoting}
+  \end{shaded}
+}
+
+% ==================== 文档信息 ====================
+$if(title)$
+\title{$title$}
+$endif$
+$if(author)$
+\author{$author$}
+$endif$
+$if(date)$
+\date{$date$}
+$else$
+\date{\today}
+$endif$
+
+\begin{document}
+
+$if(title)$
+\maketitle
+$endif$
+
+$if(toc)$
+\tableofcontents
+\newpage
+$endif$
+
+$body$
+
+\end{document}
